@@ -53,14 +53,19 @@ from langgraph.graph.message import add_messages
 from tools.budget_tools import (
     analyze_spending_patterns,
     compute_budget_breakdown,
+    compute_smart_projections,
+    fetch_current_month_budget,
     find_category_by_name,
+    find_savings_opportunities,
     format_analysis_message,
     format_breakdown_message,
+    generate_budget_insights,
     identify_repeating_categories,
     load_persisted_categories,
     log_monthly_budget_to_notion,
     merge_categories_with_persisted,
     save_persisted_categories,
+    update_budget_categories,
 )
 
 logger = logging.getLogger(__name__)
@@ -585,5 +590,316 @@ def continue_budget_workflow(graph, config: dict, user_text: str) -> dict:
 
 async def async_continue_budget_workflow(graph, config: dict, user_text: str) -> dict:
     """Async variant of continue_budget_workflow for use inside Telegram handlers."""
+    await graph.aupdate_state(config, {"messages": [HumanMessage(content=user_text)]})
+    return await graph.ainvoke(None, config)
+
+
+# ===========================================================================
+# Budget Review Workflow
+# ===========================================================================
+# A separate LangGraph that:
+#   1. Fetches the current budget from Notion (by category)
+#   2. Fetches current month expenses so far
+#   3. Fetches current month income
+#   4. Compares actuals vs budget per category — surfaces deviations >20%
+#   5. Proposes adjustments and asks user to approve/reject each one
+#   6. On approval, updates the Notion budget page
+# ===========================================================================
+
+class BudgetReviewState(TypedDict):
+    messages: Annotated[List[BaseMessage], add_messages]
+    phase: str
+    budget_page_id: str
+    budget_url: str
+    month: str
+    budget_by_category: Dict[str, float]
+    actual_by_category: Dict[str, float]
+    actual_by_subcategory: Dict[str, float]
+    projections: Dict[str, Any]             # output of compute_smart_projections
+    insights: List[str]
+    savings_opportunities: List[Dict]       # output of find_savings_opportunities (when over budget)
+    income_total: float
+    proposed_changes: Dict[str, float]
+    approved_changes: Dict[str, float]
+
+
+def _build_review_message(
+    month: str,
+    budget: Dict[str, float],
+    projections: Dict[str, Any],
+    insights: List[str],
+    savings_opportunities: List[Dict],
+    income: float,
+    proposed: Dict[str, float],
+    days_elapsed: int,
+    days_in_month: int,
+) -> str:
+    """Build the review message with projections, insights, and savings opportunities."""
+    lines = [f"📊 *Budget Review — {month}* (day {days_elapsed}/{days_in_month})\n"]
+
+    total_budget = sum(budget.values())
+    total_projected = sum(d["projected"] for d in projections.values())
+    if income > 0:
+        lines.append(
+            f"💰 Income: ₪{income:,.0f}  |  Budgeted: ₪{total_budget:,.0f}  |  "
+            f"Projected spend: ₪{total_projected:,.0f}  |  Projected savings: ₪{income - total_projected:,.0f}\n"
+        )
+
+    # Per-category: budget / actual so far / projected end-of-month
+    lines.append("*Category breakdown:*")
+    for cat in sorted(projections, key=lambda c: -projections[c]["budget"]):
+        d = projections[cat]
+        if d["budget"] == 0 and d["actual"] == 0:
+            continue
+        flag = " 🔴" if d["over_budget"] and d["pct_over"] > 20 else (" 🟡" if d["over_budget"] else "")
+        impulse_note = " _(impulse capped)_" if d["is_impulse"] else ""
+        fixed_note = " _(fixed)_" if d["is_fixed"] else ""
+        lines.append(
+            f"  • {cat}: ₪{d['budget']:,.0f} budget  "
+            f"₪{d['actual']:,.0f} so far  →  *₪{d['projected']:,.0f} projected*"
+            f"{flag}{impulse_note}{fixed_note}"
+        )
+
+    # Insights
+    if insights:
+        lines.append("")
+        for insight in insights:
+            lines.append(insight)
+
+    # Subcategory savings opportunities (only when over budget)
+    if savings_opportunities:
+        lines.append("\n*Where you could save:*")
+        for opp in savings_opportunities:
+            saving = opp["suggested_saving"]
+            lines.append(
+                f"  • {opp['subcategory']}: ₪{opp['actual']:,.0f} this month "
+                f"(avg ₪{opp['historical_avg']:,.0f}) — could save ~₪{saving:,.0f}"
+            )
+
+    # Proposed budget adjustments
+    if proposed:
+        lines.append("\n*Proposed budget adjustments:*")
+        for cat, new_val in proposed.items():
+            old_val = budget.get(cat, 0.0)
+            lines.append(f"  • {cat}: ₪{old_val:,.0f} → ₪{new_val:,.0f}")
+        new_total = total_budget + sum(proposed[c] - budget.get(c, 0) for c in proposed)
+        if income > 0:
+            lines.append(f"  With changes: save ₪{income - new_total:,.0f} instead of ₪{income - total_budget:,.0f}")
+        lines.append("\nApprove changes? Reply 'all', 'none', or name specific categories.")
+    else:
+        lines.append("\nReply 'done' to close.")
+
+    return "\n".join(lines)
+
+
+def _propose_adjustments(
+    projections: Dict[str, Any],
+    threshold_pct: float = 15.0,
+) -> Dict[str, float]:
+    """
+    Propose new budget values for categories projected to exceed budget by > threshold_pct.
+    Uses the projection (not raw actual) as the basis — smarter about impulse vs trend.
+    Rounds proposed value up to nearest 50.
+    """
+    proposed: Dict[str, float] = {}
+    for cat, d in projections.items():
+        if d["over_budget"] and d["pct_over"] > threshold_pct and d["budget"] > 0:
+            proposed[cat] = float(int((d["projected"] * 1.05 + 49) // 50) * 50)
+    return proposed
+
+
+def _review_analyze_node(state: BudgetReviewState, llm) -> Dict[str, Any]:
+    """Fetch budget, expenses, and income; run smart projections, insights, and savings analysis."""
+    import calendar
+    from datetime import date
+    from tools.notion_tools import get_expenses_between_dates, get_income_between_dates
+    from tools.notion_tools import get_spending_habits
+    from tools.budget_tools import load_persisted_categories
+
+    today = date.today()
+    start = today.replace(day=1).isoformat()
+    end = today.isoformat()
+    days_elapsed = today.day
+    days_in_month = calendar.monthrange(today.year, today.month)[1]
+
+    # Fetch budget from Notion
+    try:
+        budget_data = fetch_current_month_budget()
+    except (ValueError, RuntimeError) as exc:
+        return {
+            "phase": "done",
+            "messages": [AIMessage(content=f"❌ Could not load budget: {exc}")],
+        }
+
+    # Fetch actual expenses
+    try:
+        expense_result = get_expenses_between_dates.invoke({"start_date": start, "end_date": end})
+        actual_by_category = expense_result.get("by_category", {})
+        actual_by_subcategory = expense_result.get("by_subcategory", {})
+    except Exception as exc:
+        actual_by_category = {}
+        actual_by_subcategory = {}
+        logger.warning("Could not fetch expenses for review: %s", exc)
+
+    # Fetch income
+    try:
+        income_rows = get_income_between_dates.invoke({"start_date": start, "end_date": end})
+        income_total = sum(r.get("Amount") or 0 for r in income_rows if isinstance(r.get("Amount"), (int, float)))
+    except Exception as exc:
+        income_total = 0.0
+        logger.warning("Could not fetch income for review: %s", exc)
+
+    # Load spending habits and repeating categories for smart projections
+    try:
+        habits = get_spending_habits.invoke({})
+        habits_by_category = habits.get("by_category", {})
+        habits_by_subcategory = habits.get("by_subcategory", {})
+    except Exception:
+        habits_by_category = {}
+        habits_by_subcategory = {}
+
+    repeating_confirmed, _ = load_persisted_categories()
+
+    budget_by_category = budget_data["categories"]
+    total_budget = sum(budget_by_category.values())
+
+    # Smart projections
+    projections = compute_smart_projections(
+        budget_by_category, actual_by_category,
+        habits_by_category, repeating_confirmed,
+        days_elapsed, days_in_month,
+        actual_by_subcategory=actual_by_subcategory,
+        habits_by_subcategory=habits_by_subcategory,
+    )
+
+    # Insights
+    insights = generate_budget_insights(projections, income_total, total_budget)
+
+    # Sub-category savings opportunities — only when meaningfully over budget
+    total_projected = sum(d["projected"] for d in projections.values())
+    savings_opportunities: List[Dict] = []
+    if total_projected > total_budget * 1.05:
+        savings_opportunities = find_savings_opportunities(
+            projections, actual_by_subcategory, habits_by_subcategory
+        )
+
+    proposed = _propose_adjustments(projections)
+
+    msg = _build_review_message(
+        budget_data["month"], budget_by_category, projections,
+        insights, savings_opportunities, income_total,
+        proposed, days_elapsed, days_in_month,
+    )
+
+    return {
+        "phase": "confirm" if proposed else "done",
+        "budget_page_id": budget_data["page_id"],
+        "budget_url": budget_data["url"],
+        "month": budget_data["month"],
+        "budget_by_category": budget_by_category,
+        "actual_by_category": actual_by_category,
+        "actual_by_subcategory": actual_by_subcategory,
+        "projections": projections,
+        "insights": insights,
+        "savings_opportunities": savings_opportunities,
+        "income_total": income_total,
+        "proposed_changes": proposed,
+        "approved_changes": {},
+        "messages": [AIMessage(content=msg)],
+    }
+
+
+def _review_chat_node(state: BudgetReviewState, llm) -> Dict[str, Any]:
+    """Handle user approval/rejection of proposed changes."""
+    last_human = next(
+        (m for m in reversed(state["messages"]) if isinstance(m, HumanMessage)),
+        None,
+    )
+    if not last_human:
+        return {}
+
+    user_text = last_human.content.strip().lower()
+    proposed = state.get("proposed_changes", {})
+    budget = state.get("budget_by_category", {})
+    income = state.get("income_total", 0.0)
+
+    # Parse approval
+    if "none" in user_text or "no" == user_text:
+        return {
+            "phase": "done",
+            "messages": [AIMessage(content="No changes made. Budget stays as is 👍")],
+        }
+
+    if "all" in user_text:
+        approved = dict(proposed)
+    else:
+        # Match category names mentioned by the user
+        approved = {
+            cat: val for cat, val in proposed.items()
+            if any(word in user_text for word in cat.lower().replace("🛒","").replace("💰","").split())
+        }
+
+    if not approved:
+        return {
+            "messages": [AIMessage(
+                content="Didn't catch which categories to approve. Say 'all', 'none', or name the categories."
+            )],
+        }
+
+    # Apply to Notion
+    try:
+        update_budget_categories(state["budget_page_id"], approved)
+    except Exception as exc:
+        return {
+            "phase": "done",
+            "messages": [AIMessage(content=f"❌ Failed to update Notion: {exc}")],
+        }
+
+    new_budget = {**budget, **approved}
+    new_total = sum(new_budget.values())
+    new_savings = income - new_total
+
+    lines = ["✅ Budget updated in Notion!\n", "*Changes applied:*"]
+    for cat, val in approved.items():
+        lines.append(f"  • {cat}: ₪{budget.get(cat, 0):,.0f} → ₪{val:,.0f}")
+    lines.append(f"\nNew totals — budgeted: ₪{new_total:,.0f}  |  to save: ₪{new_savings:,.0f}")
+    if state.get("budget_url"):
+        lines.append(f"\nNotion page: {state['budget_url']}")
+
+    return {
+        "phase": "done",
+        "approved_changes": approved,
+        "messages": [AIMessage(content="\n".join(lines))],
+    }
+
+
+def _review_phase_router(state: BudgetReviewState) -> str:
+    return END if state.get("phase") == "done" else "chat"
+
+
+def create_budget_review_graph(llm):
+    """Build and compile the budget review workflow graph."""
+    graph = StateGraph(BudgetReviewState)
+    graph.add_node("analyze", partial(_review_analyze_node, llm=llm))
+    graph.add_node("chat", partial(_review_chat_node, llm=llm))
+    graph.set_entry_point("analyze")
+    graph.add_edge("analyze", "chat")
+    graph.add_conditional_edges("chat", _review_phase_router)
+    checkpointer = MemorySaver()
+    return graph.compile(checkpointer=checkpointer, interrupt_before=["chat"])
+
+
+async def async_start_budget_review(graph, config: dict) -> dict:
+    initial: Dict[str, Any] = {
+        "messages": [], "phase": "init",
+        "budget_page_id": "", "budget_url": "", "month": "",
+        "budget_by_category": {}, "actual_by_category": {}, "actual_by_subcategory": {},
+        "projections": {}, "insights": [], "savings_opportunities": [],
+        "income_total": 0.0, "proposed_changes": {}, "approved_changes": {},
+    }
+    return await graph.ainvoke(initial, config)
+
+
+async def async_continue_budget_review(graph, config: dict, user_text: str) -> dict:
     await graph.aupdate_state(config, {"messages": [HumanMessage(content=user_text)]})
     return await graph.ainvoke(None, config)

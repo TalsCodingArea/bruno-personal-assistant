@@ -467,6 +467,352 @@ def merge_categories_with_persisted(
 
 
 # ---------------------------------------------------------------------------
+# Smart projections + insights
+# ---------------------------------------------------------------------------
+
+# Sub-category keywords with no wiggle room (user can't easily reduce these)
+_FIXED_KEYWORDS = {"rent", "bills", "electric", "insurance", "subscription", "mortgage", "loan"}
+
+# Threshold above which we treat current-month pace as an impulse rather than a trend
+_IMPULSE_MULTIPLIER = 1.4
+
+
+def _is_fixed_category(name: str) -> bool:
+    """Return True if the category name suggests a fixed, non-discretionary expense."""
+    lower = name.lower()
+    return any(k in lower for k in _FIXED_KEYWORDS)
+
+
+def compute_smart_projections(
+    budget_by_category: Dict[str, float],
+    actual_by_category: Dict[str, float],
+    habits_by_category: Dict[str, Any],
+    repeating_confirmed: List[Dict],
+    days_elapsed: int,
+    days_in_month: int,
+    actual_by_subcategory: Optional[Dict[str, float]] = None,
+    habits_by_subcategory: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Compute end-of-month projections per category using three strategies:
+
+    1. Fixed/recurring (Rent, Bills, Insurance, Electric, Subscriptions):
+       Always expect the full historical avg — they haven't been paid yet doesn't mean
+       they won't be. Projection = max(actual, historical_avg or budget).
+       A category is also treated as fixed when all its subcategories have
+       monthly_once cadence (detected from spending_habits.json).
+
+    2. Impulse/variable (actual pace is >140% of expected pace vs history):
+       One big purchase shouldn't extrapolate to the rest of the month.
+       Projection = max(actual, historical_avg * 1.1).  Cap at a modest uplift from avg.
+
+    3. Steady/linear (everything else):
+       Projection = actual / progress_ratio.
+
+    For monthly_once subcategories that haven't appeared yet this month,
+    their historical avg is added to the parent category's baseline so the
+    projection doesn't undercount expected fixed costs.
+
+    Returns:
+        {category: {actual, projected, budget, is_fixed, is_impulse, over_budget,
+                    pct_over, has_wiggle_room, pending_subcats}}
+    """
+    progress = days_elapsed / days_in_month if days_in_month > 0 else 1.0
+    repeating_names = {c["name"] for c in repeating_confirmed}
+    actual_by_subcategory = actual_by_subcategory or {}
+    habits_by_subcategory = habits_by_subcategory or {}
+
+    # Pre-compute pending monthly_once subcategory amounts per parent category.
+    # A subcategory is "pending" when:
+    #   - cadence == "monthly_once"
+    #   - not yet seen in actual_by_subcategory (or amount == 0)
+    #   - typical_day is still ahead (or within a 5-day grace window)
+    pending_by_category: Dict[str, float] = {}
+    for sub, sub_habit in habits_by_subcategory.items():
+        if sub_habit.get("cadence") != "monthly_once":
+            continue
+        if actual_by_subcategory.get(sub, 0.0) > 0:
+            continue  # already paid this month
+        typical_day = sub_habit.get("typical_day", 0)
+        if typical_day > 0 and days_elapsed > typical_day + 5:
+            continue  # past the grace window — may have been skipped this month
+        parent = sub_habit.get("parent_category", "")
+        if parent:
+            pending_by_category[parent] = (
+                pending_by_category.get(parent, 0.0) + sub_habit.get("avg", 0.0)
+            )
+
+    results: Dict[str, Dict[str, Any]] = {}
+
+    all_cats = set(list(budget_by_category.keys()) + list(actual_by_category.keys()))
+    for cat in all_cats:
+        budget_val = budget_by_category.get(cat, 0.0)
+        actual = actual_by_category.get(cat, 0.0)
+        habit = habits_by_category.get(cat, {})
+        historical_avg = habit.get("avg", 0.0)
+        pending = pending_by_category.get(cat, 0.0)
+
+        # Determine if all tracked subcategories for this category are monthly_once
+        cat_subs_cadences = [
+            sh.get("cadence")
+            for sh in habits_by_subcategory.values()
+            if sh.get("parent_category") == cat and sh.get("cadence")
+        ]
+        all_monthly_once = bool(cat_subs_cadences) and all(
+            c == "monthly_once" for c in cat_subs_cadences
+        )
+
+        is_fixed = _is_fixed_category(cat) or all_monthly_once or (
+            cat in repeating_names
+            and historical_avg > 0
+            and habit.get("max", 0) > 0
+            and habit["max"] / max(habit.get("min", 1), 1) < 1.15
+        )
+
+        is_impulse = False
+        if is_fixed:
+            ref = historical_avg if historical_avg > 0 else budget_val
+            # Bump ref up by any pending subcategory amounts not yet in actual
+            if pending > 0 and actual < ref:
+                ref = max(ref, actual + pending)
+            projected = max(actual, ref)
+        elif historical_avg > 0 and progress > 0:
+            expected_pace = historical_avg * progress
+            if actual > expected_pace * _IMPULSE_MULTIPLIER:
+                # Impulse: cap projection at a modest uplift from avg, don't extrapolate
+                projected = max(actual, historical_avg * 1.1)
+                is_impulse = True
+            else:
+                # Add pending fixed subcats to linear base so they aren't missed
+                base = actual + pending
+                projected = base / progress if not pending else max(base / progress, actual + pending)
+        else:
+            base = actual + pending
+            projected = base / progress if progress > 0 else base
+
+        projected = round(projected, 2)
+        pct_over = (projected - budget_val) / budget_val * 100 if budget_val > 0 else 0.0
+
+        results[cat] = {
+            "actual": actual,
+            "projected": projected,
+            "budget": budget_val,
+            "is_fixed": is_fixed,
+            "is_impulse": is_impulse,
+            "over_budget": projected > budget_val,
+            "pct_over": round(pct_over, 1),
+            "has_wiggle_room": not is_fixed,
+            "pending_subcats": round(pending, 2),
+        }
+
+    return results
+
+
+def generate_budget_insights(
+    projections: Dict[str, Dict[str, Any]],
+    income: float,
+    total_budget: float,
+) -> List[str]:
+    """
+    Generate 1-3 actionable insights from the projections.
+
+    Rules:
+    - If over budget: identify biggest offender, find categories with wiggle room to cut,
+      show savings impact (projected vs intended).
+    - If on track: positive reinforcement only when clearly on track.
+    - Never generate generic or obvious statements.
+    """
+    total_projected = sum(d["projected"] for d in projections.values())
+    projected_savings = income - total_projected if income > 0 else 0.0
+    intended_savings = income - total_budget if income > 0 else 0.0
+    savings_gap = projected_savings - intended_savings  # negative = will save less
+
+    insights: List[str] = []
+
+    over_cats = sorted(
+        [(cat, d) for cat, d in projections.items() if d["over_budget"] and d["budget"] > 0],
+        key=lambda x: -(x[1]["projected"] - x[1]["budget"]),
+    )
+    saveable_cats = [
+        (cat, d) for cat, d in projections.items()
+        if d["has_wiggle_room"] and not d["over_budget"] and d["budget"] > 0
+        and d["projected"] < d["budget"] * 0.9
+    ]
+
+    if over_cats:
+        worst_cat, worst = over_cats[0]
+        excess = worst["projected"] - worst["budget"]
+
+        if worst["is_impulse"]:
+            insights.append(
+                f"🔴 *{worst_cat}* has a big purchase this month — projection capped at avg, "
+                f"not extrapolating it. Watch it doesn't repeat."
+            )
+        else:
+            insights.append(
+                f"🔴 *{worst_cat}* is tracking ₪{excess:,.0f} over budget."
+            )
+
+        if savings_gap < -300 and saveable_cats:
+            saveable_cat, saveable_d = saveable_cats[0]
+            room = saveable_d["budget"] - saveable_d["projected"]
+            insights.append(
+                f"💡 You have ~₪{room:,.0f} of room in *{saveable_cat}* — "
+                f"pulling back there could recover some of the gap."
+            )
+
+        if income > 0:
+            insights.append(
+                f"💰 Projected savings: *₪{projected_savings:,.0f}* "
+                f"vs your target *₪{intended_savings:,.0f}*."
+            )
+
+    elif income > 0 and savings_gap >= 0:
+        insights.append(
+            f"🟢 On track. Projected savings: *₪{projected_savings:,.0f}* "
+            f"— at or above your ₪{intended_savings:,.0f} target. Keep it up."
+        )
+
+    return insights[:3]
+
+
+def find_savings_opportunities(
+    projections: Dict[str, Dict[str, Any]],
+    actual_by_subcategory: Dict[str, float],
+    habits_by_subcategory: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """
+    For over-budget categories that have wiggle room, identify which subcategories
+    are driving the overspend and which ones could realistically be reduced.
+
+    Only called when total projected > total budget. Returns a list of:
+        {category, subcategory, actual, historical_avg, suggested_saving}
+    sorted by suggested_saving descending.
+    """
+    over_wiggly = {cat for cat, d in projections.items() if d["over_budget"] and d["has_wiggle_room"]}
+    if not over_wiggly:
+        return []
+
+    opportunities: List[Dict[str, Any]] = []
+
+    for sub, actual in actual_by_subcategory.items():
+        if actual <= 0:
+            continue
+        if _is_fixed_category(sub):
+            continue
+
+        habit = habits_by_subcategory.get(sub, {})
+        hist_avg = habit.get("avg", 0.0)
+
+        if hist_avg > 0 and actual > hist_avg * 1.1:
+            saving = round(actual - hist_avg, 2)
+            opportunities.append({
+                "subcategory": sub,
+                "actual": round(actual, 2),
+                "historical_avg": round(hist_avg, 2),
+                "suggested_saving": saving,
+            })
+
+    opportunities.sort(key=lambda x: -x["suggested_saving"])
+    return opportunities[:5]  # top 5 only to keep message short
+
+
+# ---------------------------------------------------------------------------
+# Notion Budget DB — read + update
+# ---------------------------------------------------------------------------
+
+def fetch_current_month_budget() -> Dict[str, Any]:
+    """
+    Fetch the current month's budget page from Notion.
+
+    Returns:
+    {
+      "page_id": str,
+      "url": str,
+      "month": "2026-04",
+      "categories": {"Groceries 🛒": 1650.0, "Rent 💰": 2842.0, ...}
+    }
+
+    Raises ValueError if BUDGET_DATABASE_ID is missing.
+    Raises RuntimeError if no page exists for the current month.
+    """
+    import os
+    from notion_client import Client as NotionClient
+
+    db_id = os.getenv("BUDGET_DATABASE_ID", "")
+    if not db_id:
+        raise ValueError("Missing BUDGET_DATABASE_ID environment variable.")
+
+    notion_api_key = os.getenv("NOTION_API_KEY", "")
+    if not notion_api_key:
+        raise ValueError("Missing NOTION_API_KEY environment variable.")
+
+    client = NotionClient(auth=notion_api_key)
+    today = date.today()
+    year_month = today.strftime("%Y-%m")            # e.g. "2026-04"
+    first_of_month = today.replace(day=1).isoformat()  # e.g. "2026-04-01"
+
+    # Filter: Date == first of current month
+    try:
+        resp = client.databases.query(
+            database_id=db_id,
+            filter={
+                "property": "Date",
+                "date": {"equals": first_of_month},
+            },
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Failed to query Budget DB: {exc}") from exc
+
+    pages = resp.get("results", [])
+    if not pages:
+        raise RuntimeError(
+            f"No budget page found for {year_month}. "
+            "Create a page in your Budget DB with Date = first of the month."
+        )
+
+    page = pages[0]
+    props = page.get("properties", {})
+    categories: Dict[str, float] = {}
+
+    for prop_name, prop_data in props.items():
+        if prop_data.get("type") == "number":
+            val = prop_data.get("number")
+            if isinstance(val, (int, float)):
+                categories[prop_name] = float(val)
+
+    return {
+        "page_id": page["id"],
+        "url": page.get("url", ""),
+        "month": year_month,
+        "categories": categories,
+    }
+
+
+def update_budget_categories(page_id: str, updates: Dict[str, float]) -> None:
+    """
+    Update one or more category budget values on a Notion budget page.
+
+    Args:
+        page_id: Notion page ID of the budget page.
+        updates: Dict of {category_name: new_amount}.
+    """
+    import os
+    from notion_client import Client as NotionClient
+
+    notion_api_key = os.getenv("NOTION_API_KEY", "")
+    if not notion_api_key:
+        raise ValueError("Missing NOTION_API_KEY environment variable.")
+
+    client = NotionClient(auth=notion_api_key)
+    properties = {name: {"number": amount} for name, amount in updates.items()}
+    try:
+        client.pages.update(page_id=page_id, properties=properties)
+    except Exception as exc:
+        raise RuntimeError(f"Failed to update Budget page: {exc}") from exc
+
+
+# ---------------------------------------------------------------------------
 # Notion Budget DB logging
 # ---------------------------------------------------------------------------
 

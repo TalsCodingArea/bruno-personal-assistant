@@ -191,11 +191,174 @@ def evaluate_expense(last_expense: str):
     answer = ask_openai(expenses_goal, system_message=system_message)
 
     return answer.replace("**", "*")
+def _derive_cadence(avg_transactions: float, months_present: int, total_months_tracked: int) -> str:
+    """
+    Classify a subcategory's spending cadence based on average transaction count.
+
+    monthly_once  — single payment per month (Rent, Insurance, Electric)
+    biweekly      — 2 payments per month
+    weekly        — ~4 payments per month
+    frequent      — more than once a week (daily coffee, etc.)
+    occasional    — appears in fewer than half the months tracked
+    """
+    if total_months_tracked >= 2 and months_present / total_months_tracked < 0.5:
+        return "occasional"
+    if avg_transactions <= 1.5:
+        return "monthly_once"
+    if avg_transactions <= 3.0:
+        return "biweekly"
+    if avg_transactions <= 6.0:
+        return "weekly"
+    return "frequent"
+
+
+def _apply_month_to_habits(habits: dict, data: dict, month_label: str) -> dict:
+    """
+    Merge one month of expense data (from get_expenses_between_dates) into a habits dict.
+    Updates both by_category and by_subcategory with rolling avg / min / max / last.
+    For subcategories also tracks: avg_transactions, typical_day, cadence, parent_category.
+    Mutates and returns the habits dict.
+    """
+    months_tracked = habits.get("months_tracked", 0)
+
+    # Build per-subcategory transaction stats from individual records
+    sub_stats: dict = {}
+    for record in data.get("records", []):
+        date_str = record.get("date") or ""
+        day = int(date_str[8:10]) if len(date_str) >= 10 else 0
+        parent = ((record.get("category") or []) + [""])[0]
+        for sub in (record.get("sub_category") or []):
+            if not sub:
+                continue
+            if sub not in sub_stats:
+                sub_stats[sub] = {"count": 0, "days": [], "parent_category": parent}
+            sub_stats[sub]["count"] += 1
+            if day:
+                sub_stats[sub]["days"].append(day)
+
+    for dimension in ("by_category", "by_subcategory"):
+        existing = habits.setdefault(dimension, {})
+        for key, amount in data.get(dimension, {}).items():
+            prev = existing.get(key)
+
+            if prev:
+                new_avg = round(((prev["avg"] * months_tracked) + amount) / (months_tracked + 1), 2)
+                entry = {
+                    "avg": new_avg,
+                    "min": round(min(prev["min"], amount), 2),
+                    "max": round(max(prev["max"], amount), 2),
+                    "last": round(amount, 2),
+                }
+            else:
+                entry = {
+                    "avg": round(amount, 2),
+                    "min": round(amount, 2),
+                    "max": round(amount, 2),
+                    "last": round(amount, 2),
+                }
+
+            # Enrich subcategory entries with cadence fields
+            if dimension == "by_subcategory":
+                stats = sub_stats.get(key, {})
+                new_txn_count = stats.get("count", 1)
+                days = stats.get("days", [])
+                new_typical_day = round(sum(days) / len(days)) if days else 0
+
+                if prev:
+                    prev_mp = prev.get("months_present", 1)
+                    prev_avg_txn = prev.get("avg_transactions", float(new_txn_count))
+                    prev_typical_day = prev.get("typical_day", new_typical_day)
+                    new_avg_txn = round(((prev_avg_txn * prev_mp) + new_txn_count) / (prev_mp + 1), 2)
+                    # Only average in a real typical_day when we have one
+                    if new_typical_day:
+                        new_avg_day = round(((prev_typical_day * prev_mp) + new_typical_day) / (prev_mp + 1))
+                    else:
+                        new_avg_day = prev_typical_day
+                    months_present = prev_mp + 1
+                    parent_cat = stats.get("parent_category") or prev.get("parent_category", "")
+                else:
+                    new_avg_txn = float(new_txn_count)
+                    new_avg_day = new_typical_day
+                    months_present = 1
+                    parent_cat = stats.get("parent_category", "")
+
+                entry["avg_transactions"] = new_avg_txn
+                entry["typical_day"] = new_avg_day
+                entry["months_present"] = months_present
+                entry["parent_category"] = parent_cat
+                entry["cadence"] = _derive_cadence(new_avg_txn, months_present, months_tracked + 1)
+
+            existing[key] = entry
+
+    habits["months_tracked"] = months_tracked + 1
+    habits["last_updated"] = month_label
+    return habits
+
+
+def review_budget():
+    """
+    Fetch the current month's Notion budget, compare to actual expenses so far,
+    and return a summary of deviations. Does NOT modify anything — read-only snapshot.
+    Use this to get a quick budget health check from the automations channel.
+    """
+    from tools.budget_tools import fetch_current_month_budget
+    from tools.notion_tools import get_expenses_between_dates, get_income_between_dates
+    from datetime import date
+
+    today = date.today()
+    start = today.replace(day=1).strftime("%Y-%m-%d")
+    end = today.strftime("%Y-%m-%d")
+
+    try:
+        budget_data = fetch_current_month_budget()
+    except (ValueError, RuntimeError) as exc:
+        return f"❌ Could not load budget: {exc}"
+
+    budget = budget_data["categories"]
+    month = budget_data["month"]
+
+    try:
+        expense_result = get_expenses_between_dates.invoke({"start_date": start, "end_date": end})
+        actual = expense_result.get("by_category", {})
+    except Exception:
+        actual = {}
+
+    try:
+        income_rows = get_income_between_dates.invoke({"start_date": start, "end_date": end})
+        income = sum(r.get("Amount") or 0 for r in income_rows if isinstance(r.get("Amount"), (int, float)))
+    except Exception:
+        income = 0.0
+
+    total_budget = sum(budget.values())
+    lines = [f"📊 Budget Snapshot — {month}\n",
+             f"💰 Income: ₪{income:,.0f}  |  Budgeted: ₪{total_budget:,.0f}  |  To save: ₪{income - total_budget:,.0f}\n"]
+
+    deviations = []
+    for cat, b in sorted(budget.items(), key=lambda x: -x[1]):
+        a = actual.get(cat, 0.0)
+        if b == 0:
+            continue
+        pct = (a - b) / b * 100
+        flag = " 🔴" if pct > 20 else (" 🟡" if pct > 10 else "")
+        if flag or a > 0:
+            lines.append(f"  • {cat}: ₪{b:,.0f} budget / ₪{a:,.0f} actual{flag}")
+        if pct > 20:
+            deviations.append(cat)
+
+    if deviations:
+        lines.append(f"\n⚠️ Over budget by >20%: {', '.join(deviations)}")
+        lines.append("Send 'start_budget_review' to the personal assistant to adjust.")
+    else:
+        lines.append("\n✅ All categories within budget.")
+
+    return "\n".join(lines)
+
+
 def backfill_spending_habits():
     """
     One-time backfill: fetches January and February 2026 expenses and seeds
     budget_data/spending_habits.json with a 2-month baseline.
-    Safe to run multiple times — skips a month if it was already tracked.
+    Safe to run multiple times — always rebuilds from scratch.
     """
     from tools.notion_tools import get_expenses_between_dates
 
@@ -206,50 +369,24 @@ def backfill_spending_habits():
 
     habits_path = _BUDGET_DATA_DIR / "spending_habits.json"
     habits_path.parent.mkdir(parents=True, exist_ok=True)
-    if habits_path.exists() and habits_path.read_text(encoding="utf-8").strip():
-        habits = json.loads(habits_path.read_text(encoding="utf-8"))
-    else:
-        habits = {"last_updated": None, "months_tracked": 0, "by_subcategory": {}}
+    habits = {"last_updated": None, "months_tracked": 0, "by_category": {}, "by_subcategory": {}}
 
     processed = []
     for start, end, label in months:
         data = get_expenses_between_dates.invoke({"start_date": start, "end_date": end})
-        months_tracked = habits.get("months_tracked", 0)
-        existing = habits.get("by_subcategory", {})
-
-        for sub, amount in data.get("by_subcategory", {}).items():
-            if sub in existing:
-                prev_avg = existing[sub]["avg"]
-                prev_min = existing[sub]["min"]
-                prev_max = existing[sub]["max"]
-                new_avg = round(((prev_avg * months_tracked) + amount) / (months_tracked + 1), 2)
-                existing[sub] = {
-                    "avg": new_avg,
-                    "min": round(min(prev_min, amount), 2),
-                    "max": round(max(prev_max, amount), 2),
-                    "last": round(amount, 2),
-                }
-            else:
-                existing[sub] = {
-                    "avg": round(amount, 2),
-                    "min": round(amount, 2),
-                    "max": round(amount, 2),
-                    "last": round(amount, 2),
-                }
-
-        habits["by_subcategory"] = existing
-        habits["months_tracked"] = months_tracked + 1
-        habits["last_updated"] = label
+        habits = _apply_month_to_habits(habits, data, label)
         processed.append(label)
 
     habits_path.write_text(json.dumps(habits, ensure_ascii=False, indent=2), encoding="utf-8")
-    return f"✅ Backfill complete — seeded {len(processed)} months: {', '.join(processed)}. {len(habits['by_subcategory'])} subcategories tracked."
+    n_cats = len(habits["by_category"])
+    n_subs = len(habits["by_subcategory"])
+    return f"✅ Backfill complete — {', '.join(processed)}. {n_cats} categories, {n_subs} subcategories tracked."
 
 
 def update_spending_habits():
     """
-    Fetches last month's expenses from Notion, computes per-subcategory stats,
-    and updates budget_data/spending_habits.json with rolling averages.
+    Fetches last month's expenses from Notion and updates spending_habits.json
+    with rolling averages for both categories and subcategories.
     Run automatically on the 1st of each month.
     """
     from tools.notion_tools import get_expenses_between_dates
@@ -269,37 +406,14 @@ def update_spending_habits():
     if habits_path.exists() and habits_path.read_text(encoding="utf-8").strip():
         habits = json.loads(habits_path.read_text(encoding="utf-8"))
     else:
-        habits = {"last_updated": None, "months_tracked": 0, "by_subcategory": {}}
+        habits = {"last_updated": None, "months_tracked": 0, "by_category": {}, "by_subcategory": {}}
 
-    months_tracked = habits.get("months_tracked", 0)
-    existing = habits.get("by_subcategory", {})
-
-    for sub, amount in data.get("by_subcategory", {}).items():
-        if sub in existing:
-            prev_avg = existing[sub]["avg"]
-            prev_min = existing[sub]["min"]
-            prev_max = existing[sub]["max"]
-            new_avg = round(((prev_avg * months_tracked) + amount) / (months_tracked + 1), 2)
-            existing[sub] = {
-                "avg": new_avg,
-                "min": round(min(prev_min, amount), 2),
-                "max": round(max(prev_max, amount), 2),
-                "last": round(amount, 2),
-            }
-        else:
-            existing[sub] = {
-                "avg": round(amount, 2),
-                "min": round(amount, 2),
-                "max": round(amount, 2),
-                "last": round(amount, 2),
-            }
-
-    habits["by_subcategory"] = existing
-    habits["months_tracked"] = months_tracked + 1
-    habits["last_updated"] = month_label
+    habits = _apply_month_to_habits(habits, data, month_label)
     habits_path.write_text(json.dumps(habits, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    return f"✅ Spending habits updated for {month_label} — {len(existing)} subcategories tracked."
+    n_cats = len(habits["by_category"])
+    n_subs = len(habits["by_subcategory"])
+    return f"✅ Spending habits updated for {month_label} — {n_cats} categories, {n_subs} subcategories tracked."
 
 
 properties = {

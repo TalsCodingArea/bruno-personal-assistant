@@ -16,7 +16,11 @@ from agent.budget_workflow import (
     create_budget_graph,
     async_start_budget_workflow,
     async_continue_budget_workflow,
+    create_budget_review_graph,
+    async_start_budget_review,
+    async_continue_budget_review,
 )
+from langchain_core.messages import AIMessage
 from router.intent_router import extract_url_from_message, is_cancel_intent, is_job_url_fast
 from tools.job_tools import run_job_application_workflow
 from tools.notion_tools import (
@@ -35,10 +39,14 @@ load_dotenv()
 llm = get_llm()
 memory = MemoryStore()
 budget_graph = create_budget_graph(llm)
+budget_review_graph = create_budget_review_graph(llm)
 
 # chat_id (str) → LangGraph thread_id for the active budget session
 # entry is removed when the workflow reaches phase "done"
 _budget_sessions: Dict[str, str] = {}
+
+# chat_id (str) → LangGraph thread_id for the active budget review session
+_budget_review_sessions: Dict[str, str] = {}
 
 # chat_id (str) → job URL queued by the apply_for_job tool, consumed after agent turn
 _pending_jobs: Dict[str, str] = {}
@@ -51,7 +59,10 @@ def _get_or_build_agent(chat_id: str):
     """Return a cached agent for chat_id, creating one with bound tools on first call."""
     if chat_id not in _agents:
         from tools.registry import get_workflow_tools
-        workflow_tools = get_workflow_tools(chat_id, budget_graph, _budget_sessions, _pending_jobs)
+        workflow_tools = get_workflow_tools(
+            chat_id, budget_graph, _budget_sessions, _pending_jobs,
+            budget_review_graph, _budget_review_sessions,
+        )
         _agents[chat_id] = build_agent(llm, memory, extra_tools=workflow_tools)
     return _agents[chat_id]
 
@@ -231,6 +242,42 @@ async def _handle_job_application(
                 pass
 
 
+async def _handle_budget_review(
+    message,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    start: bool = False,
+) -> None:
+    """Drive the LangGraph budget review workflow for one Telegram turn."""
+    chat_id = str(message.chat_id)
+    try:
+        if start:
+            import time
+            thread_id = f"budget_review_{chat_id}_{int(time.time())}"
+            _budget_review_sessions[chat_id] = thread_id
+            config = {"configurable": {"thread_id": thread_id}}
+            state = await async_start_budget_review(budget_review_graph, config)
+        else:
+            thread_id = _budget_review_sessions[chat_id]
+            config = {"configurable": {"thread_id": thread_id}}
+            user_text = (message.text or "").strip()
+            state = await async_continue_budget_review(budget_review_graph, config, user_text)
+
+        msgs = state.get("messages", [])
+        last_ai = next((m for m in reversed(msgs) if isinstance(m, AIMessage)), None)
+        if last_ai:
+            await message.reply_text(last_ai.content)
+
+        if state.get("phase") == "done":
+            _budget_review_sessions.pop(chat_id, None)
+
+    except Exception as exc:
+        logger.exception("Budget review workflow error for chat %s", chat_id)
+        _budget_review_sessions.pop(chat_id, None)
+        await message.reply_text("Something went wrong with the budget review. Please try again.")
+        await _safe_log(context, f"[budget_review:error] {exc}")
+
+
 async def _handle_budget_workflow(
     message,
     context: ContextTypes.DEFAULT_TYPE,
@@ -287,6 +334,15 @@ async def _handle_personal_assistant_text(update: Update, context: ContextTypes.
         return
 
     chat_id = str(message.chat_id)
+
+    # Active budget review workflow
+    if chat_id in _budget_review_sessions:
+        if is_cancel_intent(user_text):
+            _budget_review_sessions.pop(chat_id, None)
+            await message.reply_text("Budget review cancelled.")
+            return
+        await _handle_budget_review(message, context, start=False)
+        return
 
     # Active budget workflow — check for escape or job switch, then continue
     if chat_id in _budget_sessions:
