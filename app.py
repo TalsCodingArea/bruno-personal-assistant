@@ -1,3 +1,4 @@
+import ast
 import json
 import inspect
 import logging
@@ -102,22 +103,53 @@ def _load_automation_functions() -> Dict[str, Any]:
         obj = getattr(automation_module, name)
         if not inspect.isfunction(obj) or obj.__module__ != automation_module.__name__:
             continue
-        signature = inspect.signature(obj)
-        has_required_params = any(
-            parameter.default is inspect._empty
-            and parameter.kind in (
-                inspect.Parameter.POSITIONAL_ONLY,
-                inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                inspect.Parameter.KEYWORD_ONLY,
-            )
-            for parameter in signature.parameters.values()
-        )
-        if not has_required_params:
-            functions[name] = obj
+        functions[name] = obj
     return functions
 
 
 AUTOMATION_FUNCTIONS = _load_automation_functions()
+
+
+def _strip_json_code_fence(text: str) -> str:
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+
+    lines = stripped.splitlines()
+    if len(lines) >= 2 and lines[-1].strip() == "```":
+        return "\n".join(lines[1:-1]).strip()
+    return stripped
+
+
+def _parse_automation_payload(text: str) -> Dict[str, Any]:
+    payload_text = _strip_json_code_fence(text)
+    try:
+        payload = json.loads(payload_text)
+    except json.JSONDecodeError:
+        try:
+            payload = ast.literal_eval(payload_text)
+        except (SyntaxError, ValueError) as exc:
+            raise ValueError("message must be a JSON object") from exc
+
+    if not isinstance(payload, dict):
+        raise ValueError("message must be a JSON object")
+
+    tool_name = payload.get("tool")
+    if not isinstance(tool_name, str) or not tool_name.strip():
+        raise ValueError("`tool` must be a non-empty string")
+
+    args = payload.get("args", {})
+    if not isinstance(args, dict):
+        raise ValueError("`args` must be an object")
+
+    return {"tool": tool_name.strip(), "args": args}
+
+
+def _automation_usage_message() -> str:
+    return (
+        "Send automation messages as JSON, for example:\n"
+        '{"tool": "log_expense", "args": {"Description": "Coffee", "Amount": 12.5, "Date": "2026-04-29"}}'
+    )
 
 
 async def _keep_typing(bot, chat_id: int, stop_event: asyncio.Event) -> None:
@@ -407,22 +439,46 @@ async def _handle_automation_text(message, context: ContextTypes.DEFAULT_TYPE) -
     text = (message.text or message.caption or "").strip()
     if not text:
         return
-    func = AUTOMATION_FUNCTIONS.get(text)
-    if not func:
-        logger.info("Ignoring unknown automation command: %s", text)
-        await message.reply_text(f"Unknown automation command: `{text}`")
+
+    try:
+        payload = _parse_automation_payload(text)
+    except ValueError as exc:
+        logger.info("Ignoring invalid automation payload: %s", exc)
+        await message.reply_text(f"Invalid automation payload: {exc}.\n\n{_automation_usage_message()}")
         return
 
-    await _safe_log(context, f"[automation] Running: {text}")
+    tool_name = payload["tool"]
+    args = payload["args"]
+    func = AUTOMATION_FUNCTIONS.get(tool_name)
+    if not func:
+        available = ", ".join(sorted(AUTOMATION_FUNCTIONS))
+        logger.info("Ignoring unknown automation tool: %s", tool_name)
+        await message.reply_text(f"Unknown automation tool: `{tool_name}`.\nAvailable tools: {available}")
+        return
+
     try:
-        result = await asyncio.to_thread(func)
+        inspect.signature(func).bind(**args)
+    except TypeError as exc:
+        logger.info("Invalid automation args for %s: %s", tool_name, exc)
+        await message.reply_text(f"Invalid args for `{tool_name}`: {exc}")
+        return
+
+    await _safe_log(context, f"[automation] Running: {tool_name}")
+    try:
+        if inspect.iscoroutinefunction(func):
+            result = await func(**args)
+        else:
+            result = await asyncio.to_thread(func, **args)
         if result is None:
             result = "✅ Automation completed."
         await message.reply_text(str(result))
+    except (TypeError, ValueError) as exc:
+        logger.info("Automation args rejected for %s: %s", tool_name, exc)
+        await message.reply_text(f"Invalid args for `{tool_name}`: {exc}")
     except Exception as exc:
-        logger.exception("Automation command failed: %s", text)
-        await _safe_log(context, f"[automation:error] {text}: {exc}")
-        await message.reply_text(f"Automation `{text}` failed.")
+        logger.exception("Automation tool failed: %s", tool_name)
+        await _safe_log(context, f"[automation:error] {tool_name}: {exc}")
+        await message.reply_text(f"Automation `{tool_name}` failed.")
 
 
 async def _handle_receipt_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

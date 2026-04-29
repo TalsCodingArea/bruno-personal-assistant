@@ -27,6 +27,8 @@ A self-hosted AI-powered personal assistant running on a Raspberry Pi, built wit
 - Auto-extracts and categorizes the data, uploads to Notion, and evaluates the spend
 
 ### ⚙️ Automations
+- Send JSON messages to the automations chat: `{"tool": "tool_name", "args": {}}`
+- `log_expense` — Create a Notion expense from property-name args such as `Description`, `Amount`, `Date`, `Category`, `Sub Category`, `Payment Method`, and `Type`
 - `morning_summary` — Daily performance recap based on your Notion day scores and workout streaks
 - `get_weekly_spending_summary` — Weekly finance overview
 - `evaluate_expense` — Inline budget check after each new expense
@@ -48,7 +50,7 @@ Telegram Bot (app.py)
     │       scrape → parse → research → generate docs → log to Notion
     │
     └── Automations Channel
-            → maps message text to no-arg functions
+            → routes JSON tool messages to automation functions
 ```
 
 **Stack:** Python 3.13 · LangChain · OpenAI GPT-4o / GPT-4o-mini · Notion API · Telegram Bot API · WeasyPrint · BeautifulSoup

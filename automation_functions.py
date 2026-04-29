@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import os
 import json
 from pathlib import Path
+from typing import Any, Dict, Iterable, List
 load_dotenv()
 
 _BUDGET_DATA_DIR = Path(__file__).parent / "budget_data"
@@ -416,30 +417,285 @@ def update_spending_habits():
     return f"✅ Spending habits updated for {month_label} — {n_cats} categories, {n_subs} subcategories tracked."
 
 
-properties = {
-    "Description": {
-        "type": "title",
-        "content": "Coffee"
-    },
-    "Amount": {
-        "type": "number",
-        "content": 3.5
-    },
-    "Category": {
-        "type": "multi_select",
-        "content": ["Food & Drink"]
-    },
-    "Sub Category":{
-        "type": "multi_select",
-        "content": ["Bills 🧾"]
-    },
-    "Date": {
-        "type": "date",
-        "content": datetime.now().strftime("%Y-%m-%d")
-    },
-    "Tag": {
-        "type": "multi_select",
-        "content": ["Tal 👨🏻"]
-    }
+EXPENSES_DATABASE_ID = "c9d8d125ec454f2f8a72ba97493bcb56"
+
+EXPENSE_REQUIRED_PROPERTIES = ("Description", "Amount", "Date")
+
+EXPENSE_PROPERTY_TYPES = {
+    "Description": "title",
+    "Amount": "number",
+    "Actual": "number",
+    "Date": "date",
+    "Category": "multi_select",
+    "Sub Category": "multi_select",
+    "Tag": "multi_select",
+    "Payment Method": "select",
+    "Type": "select",
+    "Invoice": "file",
 }
-# print(log_expense(properties))
+
+EXPENSE_UNSUPPORTED_PROPERTIES = {
+    "Academic Yearly Finance",
+    "Final",
+    "Financial Analytics",
+    "Financial Summary",
+    "Place",
+    "Shiri Budget",
+    "Yearly Finance Car 🚗",
+    "Yearly Finance Home 🏡",
+    "Yearly Finance Lifestyle 🏞️",
+    "Yearly Finance Spendings 📦",
+    "Yearly Finance Subscriptions ♻️",
+    "Yearly Finance Vacation 🏖️",
+}
+
+EXPENSE_SELECT_OPTIONS = {
+    "Category": [
+        "Uncategorized",
+        "Home 🏡",
+        "Lifestyle 🏞️",
+        "Car 🚗",
+        "Spendings 📦",
+        "Subscriptions ♻️",
+        "Vacation 🏖️",
+        "Academic 🎓",
+        "Unrecognized",
+    ],
+    "Sub Category": [
+        "Car Service ⚙️",
+        "Car Wash 🧽",
+        "Decor 🪑",
+        "One Time Purchase 1️⃣",
+        "Lunch 🍽️",
+        "Insurance 🦺",
+        "Reimburse 👈🏻",
+        "Shop 🛖",
+        "Bills 🧾",
+        "Snacks & Drinks 🍫",
+        "Parking 🅿️",
+        "Super-Pharm 💊",
+        "Fuel ⛽",
+        "Groceries 🛒",
+        "Other 🤷🏻‍♂️",
+        "Home 🏡",
+        "Clothing 👕",
+        "Night Out 🍻",
+        "Adventure ☀️",
+        "Shiri 💌",
+        "Electronics 📺",
+        "Electric 🔋",
+        "Restaurant 🍷",
+        "Takeout 🥡",
+        "Gift 🎁",
+        "Mutual 🙏🏻",
+        "In review",
+        "Transport 🚌",
+        "Barber 💈",
+        "👨🏻‍💻 Personal Projects",
+        "Media Services 📺",
+        "Tuition 📚",
+        "Therapy 🧘🏻‍♂️",
+        "Gym",
+        "Gym 🏋🏻",
+        "🍿 Movies",
+        "🏨 Accommondation",
+        "🏂 Activities",
+        "🫀 Health",
+        "Date 🫶🏻",
+        "Rent 💰",
+        "Snacks & Drinks :chocolate_bar:",
+        "Nails💅",
+    ],
+    "Tag": [
+        "Shiri 👧🏻",
+        "Tal 👨🏻",
+        "Mutual 👫🏻",
+    ],
+    "Payment Method": [
+        "Cibus",
+        "Credit",
+        "Bank",
+        "Cash",
+        "Gift Card",
+    ],
+    "Type": [
+        "Waste",
+        "Want",
+        "Need",
+        "wam",
+    ],
+}
+
+
+def _format_options(options: Iterable[str]) -> str:
+    return ", ".join(f"`{option}`" for option in options)
+
+
+def _require_text(property_name: str, value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"`{property_name}` must be a non-empty string.")
+    return value.strip()
+
+
+def _coerce_number(property_name: str, value: Any) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"`{property_name}` must be a number.")
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            return float(value.strip())
+        except ValueError as exc:
+            raise ValueError(f"`{property_name}` must be a number.") from exc
+    raise ValueError(f"`{property_name}` must be a number.")
+
+
+def _validate_date_string(property_name: str, value: Any) -> str:
+    date_value = _require_text(property_name, value)
+    try:
+        datetime.fromisoformat(date_value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"`{property_name}` must be an ISO date or datetime string.") from exc
+    return date_value
+
+
+def _coerce_date(property_name: str, value: Any) -> Dict[str, Any]:
+    if isinstance(value, str):
+        return {"start": _validate_date_string(property_name, value)}
+    if isinstance(value, dict):
+        start = _validate_date_string(f"{property_name}.start", value.get("start"))
+        date_value = {"start": start}
+        if value.get("end") is not None:
+            date_value["end"] = _validate_date_string(f"{property_name}.end", value.get("end"))
+        if value.get("time_zone") is not None:
+            date_value["time_zone"] = _require_text(f"{property_name}.time_zone", value.get("time_zone"))
+        return date_value
+    raise ValueError(f"`{property_name}` must be an ISO date string or an object with `start`.")
+
+
+def _coerce_select(property_name: str, value: Any) -> str:
+    selected = _require_text(property_name, value)
+    options = EXPENSE_SELECT_OPTIONS[property_name]
+    if selected not in options:
+        raise ValueError(
+            f"`{property_name}` must be one of: {_format_options(options)}."
+        )
+    return selected
+
+
+def _coerce_multi_select(property_name: str, value: Any) -> List[str]:
+    if isinstance(value, str):
+        names = [value.strip()] if value.strip() else []
+    elif isinstance(value, list):
+        names = []
+        for item in value:
+            if not isinstance(item, str) or not item.strip():
+                raise ValueError(f"`{property_name}` must contain only non-empty strings.")
+            names.append(item.strip())
+    else:
+        raise ValueError(f"`{property_name}` must be a string or a list of strings.")
+
+    options = EXPENSE_SELECT_OPTIONS[property_name]
+    invalid = [name for name in names if name not in options]
+    if invalid:
+        raise ValueError(
+            f"`{property_name}` has unsupported option(s): {_format_options(invalid)}. "
+            f"Allowed options: {_format_options(options)}."
+        )
+    return names
+
+
+def _coerce_files(property_name: str, value: Any) -> List[Dict[str, Any]]:
+    file_items = value if isinstance(value, list) else [value]
+    files = []
+    for item in file_items:
+        if not isinstance(item, dict):
+            raise ValueError(f"`{property_name}` files must be objects with `name` and `url`.")
+        name = _require_text(f"{property_name}.name", item.get("name"))
+        url = _require_text(f"{property_name}.url", item.get("url"))
+        if not url.startswith(("http://", "https://")):
+            raise ValueError(f"`{property_name}.url` must start with http:// or https://.")
+        files.append({"name": name, "type": "external", "external": {"url": url}})
+    return files
+
+
+def _build_expense_notion_properties(raw_properties: Dict[str, Any]) -> Dict[str, Any]:
+    if not raw_properties:
+        raise ValueError("`args` must include expense properties.")
+
+    defaults = {"Tag": ["Tal 👨🏻"]}
+    merged = {**defaults, **raw_properties}
+
+    missing = [name for name in EXPENSE_REQUIRED_PROPERTIES if name not in merged]
+    if missing:
+        raise ValueError(f"Missing required expense properties: {_format_options(missing)}.")
+
+    unsupported = [name for name in merged if name in EXPENSE_UNSUPPORTED_PROPERTIES]
+    if unsupported:
+        raise ValueError(
+            f"These expense properties exist but are not supported by `log_expense` yet: "
+            f"{_format_options(unsupported)}."
+        )
+
+    unknown = [name for name in merged if name not in EXPENSE_PROPERTY_TYPES]
+    if unknown:
+        known = sorted([*EXPENSE_PROPERTY_TYPES, *EXPENSE_UNSUPPORTED_PROPERTIES])
+        raise ValueError(
+            f"Unknown expense properties: {_format_options(unknown)}. "
+            f"Known properties: {_format_options(known)}."
+        )
+
+    notion_properties: Dict[str, Any] = {}
+    for property_name, value in merged.items():
+        property_type = EXPENSE_PROPERTY_TYPES[property_name]
+        if property_type == "title":
+            notion_properties[property_name] = {
+                "title": [{"type": "text", "text": {"content": _require_text(property_name, value)}}]
+            }
+        elif property_type == "number":
+            notion_properties[property_name] = {"number": _coerce_number(property_name, value)}
+        elif property_type == "date":
+            notion_properties[property_name] = {"date": _coerce_date(property_name, value)}
+        elif property_type == "select":
+            notion_properties[property_name] = {"select": {"name": _coerce_select(property_name, value)}}
+        elif property_type == "multi_select":
+            notion_properties[property_name] = {
+                "multi_select": [{"name": name} for name in _coerce_multi_select(property_name, value)]
+            }
+        elif property_type == "file":
+            notion_properties[property_name] = {"files": _coerce_files(property_name, value)}
+    return notion_properties
+
+
+def log_expense(**properties):
+    """
+    Create an expense row in the Notion expenses database.
+
+    Automation payload example:
+    {
+      "tool": "log_expense",
+      "args": {
+        "Description": "Coffee",
+        "Amount": 12.5,
+        "Date": "2026-04-29",
+        "Category": ["Lifestyle 🏞️"],
+        "Sub Category": ["Snacks & Drinks 🍫"],
+        "Payment Method": "Credit",
+        "Type": "Want"
+      }
+    }
+    """
+    database_id = os.getenv("EXPENSES_DATABASE_ID") or EXPENSES_DATABASE_ID
+    notion_properties = _build_expense_notion_properties(properties)
+    page = notion_client.pages.create(
+        parent={"database_id": database_id},
+        properties=notion_properties,
+    )
+
+    description = properties.get("Description", "Expense")
+    amount = _coerce_number("Amount", properties.get("Amount"))
+    url = page.get("url")
+    message = f"✅ Logged expense: {description} — ₪{amount:g}"
+    if url:
+        message += f"\n{url}"
+    return message
