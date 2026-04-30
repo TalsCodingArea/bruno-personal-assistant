@@ -623,7 +623,8 @@ def _build_expense_notion_properties(raw_properties: Dict[str, Any]) -> Dict[str
     if not raw_properties:
         raise ValueError("`args` must include expense properties.")
 
-    defaults = {"Tag": ["Tal 👨🏻"]}
+    defaults = {"Tag": ["Tal 👨🏻"],
+                "Payment Method": "Credit"}
     merged = {**defaults, **raw_properties}
 
     missing = [name for name in EXPENSE_REQUIRED_PROPERTIES if name not in merged]
