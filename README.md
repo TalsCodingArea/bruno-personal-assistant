@@ -40,17 +40,23 @@ A self-hosted AI-powered personal assistant running on a Raspberry Pi, built wit
 ```
 Telegram Bot (app.py)
     │
-    ├── Intent Router → finance / movies / job_application / general
-    │
+    └── personal_assistant/telegram
+            ├── routing.py → routes updates by Telegram channel
+            └── handlers/
+                    ├── personal.py → general assistant + LangChain/LangGraph workflows
+                    ├── receipts.py → PDF expense logging
+                    ├── automations.py → structured JSON automation messages
+                    ├── jobs.py → job application pipeline
+                    └── nutritionist.py → nutritionist channel boundary
+
+Core domains:
     ├── Conversational Agent (LangChain)
     │       ├── Tools: Notion CRUD, receipt OCR, movie search, ideas
     │       └── Memory: per-session chat history keyed by chat_id
-    │
-    ├── Job Application Pipeline (bypasses agent)
-    │       scrape → parse → research → generate docs → log to Notion
-    │
-    └── Automations Channel
-            → routes JSON tool messages to automation functions
+    ├── Budget Workflows (LangGraph)
+    │       └── interactive monthly budget and budget review flows
+    └── Job Application Pipeline
+            scrape → parse → research → generate docs → log to Notion
 ```
 
 **Stack:** Python 3.13 · LangChain · OpenAI GPT-4o / GPT-4o-mini · Notion API · Telegram Bot API · WeasyPrint · BeautifulSoup
@@ -60,11 +66,19 @@ Telegram Bot (app.py)
 ## 📁 Project Structure
 
 ```
-├── app.py                        # Telegram bot entry point
+├── app.py                        # Thin Telegram bot entry point
+├── personal_assistant/
+│   ├── config.py                 # Environment-backed settings and channel IDs
+│   ├── runtime.py                # Shared LLM, memory, graphs, session maps
+│   └── telegram/
+│       ├── bot.py                # Application creation and handler registration
+│       ├── routing.py            # Channel-based Telegram routing
+│       ├── logging.py            # Best-effort logs-channel sender
+│       └── handlers/             # One handler module per Telegram channel
 ├── agent/
 │   ├── builder.py                # LangChain agent setup
 │   ├── contexts/                 # Per-intent system prompts
-│   └── llm.py                   # LLM configuration
+│   └── llm.py                    # LLM configuration
 ├── tools/
 │   ├── notion_tools.py           # Notion DB CRUD
 │   ├── receipt_tools.py          # PDF OCR pipeline
@@ -105,6 +119,8 @@ TELEGRAM_CHAT_ID_PERSONAL_ASSISTANT=
 TELEGRAM_CHAT_ID_RECEIPTS=
 TELEGRAM_CHAT_ID_LOGS=
 TELEGRAM_CHAT_ID_AUTOMATIONS=
+TELEGRAM_CHAT_ID_JOBS=
+TELEGRAM_CHAT_ID_NUTRITIONIST=
 
 # OpenAI
 OPENAI_API_KEY=
@@ -165,6 +181,8 @@ docker-compose up
 | `receipts` | Drop a receipt PDF here to auto-log it |
 | `automations` | Send a function name to trigger it (e.g. `morning_summary`) |
 | `logs` | System output and confirmations |
+| `jobs` | Send a job listing URL to generate application materials |
+| `nutritionist` | Dedicated nutrition channel; workflow pending |
 
 ---
 

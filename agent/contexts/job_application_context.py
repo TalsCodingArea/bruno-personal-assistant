@@ -5,7 +5,7 @@ Job Application Context (agent/contexts/job_application_context.py)
 This context is used by the intent router to detect job application requests
 in the personal assistant chat. It is NOT used to build a conversational agent
 for this workflow — the job application pipeline is a direct sequential function
-call in app.py (see _handle_job_application).
+called by `personal_assistant.telegram.handlers.jobs.handle_job_application`.
 
 Intent detection: a message is classified as "job_application" when the user
 sends a job listing URL, optionally preceded by a trigger phrase such as:

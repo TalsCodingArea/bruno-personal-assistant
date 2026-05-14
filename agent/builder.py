@@ -3,7 +3,6 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
 
 from agent.system_prompt import SYSTEM_PROMPT
-from tools.registry import get_tools
 from agent.memory import MemoryStore
 
 
@@ -23,6 +22,8 @@ def build_prompt():
 
 
 def build_agent(llm, memory_store: MemoryStore, extra_tools=None):
+    from tools.registry import get_tools
+
     tools = get_tools()
     if extra_tools:
         tools = tools + list(extra_tools)

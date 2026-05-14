@@ -1,12 +1,12 @@
 version: "3.9"
 services:
   bot:
-    image: python:3.11-slim
+    image: python:3.13-slim
     working_dir: /app
     env_file: .env
     command: ["bash","-lc","pip install --no-cache-dir -r requirements.txt && python -u app.py"]
     volumes:
-      - ./app:/app
+      - ./:/app
     restart: unless-stopped
     environment:
       PYTHONUNBUFFERED: "1"
