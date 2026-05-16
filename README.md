@@ -26,6 +26,11 @@ A self-hosted AI-powered personal assistant running on a Raspberry Pi, built wit
 - Send a receipt PDF to the Telegram receipts channel
 - Auto-extracts and categorizes the data, uploads to Notion, and evaluates the spend
 
+### 🍽️ Nutritionist
+- Send planned food to the nutritionist channel and get a quantity recommendation
+- Reads today's consumed macros and Tal's macro goal from Notion
+- Considers remaining daily macros and local time of day before recommending portions
+
 ### ⚙️ Automations
 - Send JSON messages to the automations chat: `{"tool": "tool_name", "args": {}}`
 - `log_expense` — Create a Notion expense from property-name args such as `Description`, `Amount`, `Date`, `Category`, `Sub Category`, `Payment Method`, and `Type`
@@ -55,8 +60,10 @@ Core domains:
     │       └── Memory: per-session chat history keyed by chat_id
     ├── Budget Workflows (LangGraph)
     │       └── interactive monthly budget and budget review flows
-    └── Job Application Pipeline
-            scrape → parse → research → generate docs → log to Notion
+    ├── Job Application Pipeline
+    │       └── scrape → parse → research → generate docs → log to Notion
+    └── Nutritionist
+            Notion macros snapshot → LLM quantity recommendation
 ```
 
 **Stack:** Python 3.13 · LangChain · OpenAI GPT-4o / GPT-4o-mini · Notion API · Telegram Bot API · WeasyPrint · BeautifulSoup
@@ -83,6 +90,8 @@ Core domains:
 │   ├── notion_tools.py           # Notion DB CRUD
 │   ├── receipt_tools.py          # PDF OCR pipeline
 │   ├── job_tools.py              # Job application workflow
+│   ├── nutrition_tools.py        # Nutrition Notion queries
+│   ├── nutrition_advice.py       # Macro-aware quantity recommendations
 │   ├── movie_tools.py            # Movie search & logging
 │   └── registry.py              # Tool registration
 ├── router/
@@ -133,6 +142,8 @@ EXPENSES_DATABASE_ID=
 INCOME_DATABASE_ID=
 MOVIES_DATABASE_ID=
 JOBS_DATABASE_ID=
+NUTRITION_LOGS_DATA_SOURCE_ID=
+MACROS_GOAL_DATA_SOURCE_ID=
 
 # Notion — Automations
 DAY_RATING_DATABASE_ID=
@@ -148,6 +159,35 @@ OMDB_API_KEY=
 PDF_ENDPOINT_ACCESS_TOKEN=
 RECEIPT_CATEGORY_OPTIONS=Groceries,Restaurant,Bills,EV,Online Services,Therapy,Decor
 ```
+
+### Nutritionist Notion databases
+
+`NUTRITION_LOGS_DATA_SOURCE_ID` should point to the Nutrition Logs data source.
+Expected properties:
+
+| Property | Type |
+|---|---|
+| `Name` | title |
+| `Date` | date |
+| `Calories` | number |
+| `Protein` | number |
+| `Carbs` | number |
+| `Fats` | number |
+| `Tag` | select (`Tal`, `Shiri`) |
+
+`MACROS_GOAL_DATA_SOURCE_ID` should point to the Macros goal data source.
+Expected properties:
+
+| Property | Type |
+|---|---|
+| `Name` | title |
+| `Calories` | number |
+| `Protein` | number |
+| `Carbs` | number |
+| `Fats` | number |
+
+The first implementation is hardcoded to use `Tal` as the macro goal row and nutrition log tag.
+If Tal's macro goal row has zero or empty values, the nutritionist will ask you to fill the Notion goal first.
 
 ### 3. Prepare personal data files
 
@@ -171,6 +211,12 @@ Or with Docker:
 docker-compose up
 ```
 
+Nutritionist smoke test:
+
+```bash
+.venv/bin/python scripts/nutrition_smoke.py "200g chicken breast and rice"
+```
+
 ---
 
 ## 📬 Telegram Channels
@@ -182,7 +228,7 @@ docker-compose up
 | `automations` | Send a function name to trigger it (e.g. `morning_summary`) |
 | `logs` | System output and confirmations |
 | `jobs` | Send a job listing URL to generate application materials |
-| `nutritionist` | Dedicated nutrition channel; workflow pending |
+| `nutritionist` | Send planned food and get macro-aware quantity advice |
 
 ---
 
