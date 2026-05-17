@@ -15,6 +15,11 @@ from tools.israeli_market_tools import (
     get_tase_stock_quote,
     get_tase_index,
 )
+from tools.monthly_budget.agent_tools import (
+    delete_monthly_budget,
+    review_monthly_budgets,
+    update_monthly_budget,
+)
 
 
 def get_tools():
@@ -29,6 +34,9 @@ def get_tools():
         get_spending_habits,
         get_financial_advisor_habits,
         update_financial_advisor_habit,
+        review_monthly_budgets,
+        update_monthly_budget,
+        delete_monthly_budget,
         create_idea_in_notion,
         get_exchange_rates,
         get_tase_stock_quote,

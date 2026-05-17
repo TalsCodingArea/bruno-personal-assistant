@@ -1,5 +1,5 @@
 from base_scripts import *
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from dotenv import load_dotenv
 import os
 import json
@@ -12,6 +12,86 @@ _BUDGET_DATA_DIR = Path(__file__).parent / "budget_data"
 GMAIL_SMTP_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 notion_client = Client(auth=os.environ["NOTION_API_KEY"])
 openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+
+
+def generate_monthly_budgets(
+    month: str = "",
+    as_of: str = "",
+    lookback_months: int = 6,
+    dry_run: bool = True,
+    include_non_predictable: bool = False,
+) -> str:
+    """
+    Generate or preview monthly Budget database pages.
+
+    Automation payload examples:
+    Dry-run:
+    {
+      "tool": "generate_monthly_budgets",
+      "args": {"month": "2026-05", "as_of": "2026-05-01", "lookback_months": 6}
+    }
+
+    Apply writes:
+    {
+      "tool": "generate_monthly_budgets",
+        "args": {"month": "2026-05", "as_of": "2026-05-01", "lookback_months": 6, "dry_run": false}
+    }
+    """
+    from tools.monthly_budget.models import Month
+    from tools.monthly_budget.notion_writer import build_and_upsert_monthly_budget_pages
+
+    target_month = Month.parse(month) if month else None
+    as_of_date = date.fromisoformat(as_of) if as_of else None
+    result = build_and_upsert_monthly_budget_pages(
+        target_month=target_month,
+        as_of=as_of_date,
+        lookback_months=lookback_months,
+        dry_run=dry_run,
+        include_non_predictable=include_non_predictable,
+    )
+
+    preview = result["preview"]
+    upsert = result["upsert"]
+    totals = preview["totals"]
+    writes = upsert["writes"]
+    mode = "DRY RUN" if upsert["dry_run"] else "APPLIED"
+
+    action_counts: Dict[str, int] = {}
+    for write in writes:
+        action = write["action"]
+        action_counts[action] = action_counts.get(action, 0) + 1
+
+    action_summary = ", ".join(f"{action}: {count}" for action, count in sorted(action_counts.items()))
+    lines = [
+        f"{mode} monthly Budget pages for {upsert['month']}",
+        f"Financial Summary: {upsert['financial_summary_url']}",
+        "",
+        f"Predicted income: ₪{totals['predicted_income']:,.0f}",
+        f"Budget pool: ₪{totals['spendable_budget']:,.0f}",
+        f"Projected spend: ₪{totals['projected_spend']:,.0f}",
+        f"Allocated budget: ₪{totals['allocated_budget']:,.0f}",
+        f"Allocation gap: ₪{totals['allocation_gap']:,.0f}",
+        f"Included categories: recurring + predictable_variable"
+        + (" + non_predictable" if include_non_predictable else ""),
+        "",
+        f"Pages: {action_summary or 'none'}",
+    ]
+
+    for write in writes[:20]:
+        lines.append(
+            f"- {write['action']}: {write['sub_category']} | "
+            f"₪{write['budget']:,.0f} | {write['date']}"
+        )
+    if len(writes) > 20:
+        lines.append(f"...and {len(writes) - 20} more")
+
+    if dry_run:
+        lines.append("")
+        lines.append("Dry-run only. Send the same payload with `dry_run: false` to write pages.")
+
+    return "\n".join(lines)
+
+generate_monthly_budgets(dry_run=False)
 
 def morning_summary():
     month_ago_date = datetime.now() - timedelta(days=90)
@@ -699,4 +779,13 @@ def log_expense(**properties):
     message = f"✅ Logged expense: {description} — ₪{amount:g}"
     if url:
         message += f"\n{url}"
+    try:
+        from tools.monthly_budget.budget_monitor import evaluate_logged_expense_budget, format_budget_alerts
+
+        alerts = evaluate_logged_expense_budget(properties)
+        alert_text = format_budget_alerts(alerts)
+        if alert_text:
+            message += f"\n\n{alert_text}"
+    except Exception as exc:
+        message += f"\n\n⚠️ Budget evaluation failed: {exc}"
     return message

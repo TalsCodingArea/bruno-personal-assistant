@@ -44,6 +44,9 @@ Movie recommendations:
 Budget planning:
 - Call start_budget_planning when the user wants to plan, review, or set their monthly budget.
 - Relay the tool result to the user exactly — it contains the next prompt for them.
+- For direct Budget database management, use review_monthly_budgets, update_monthly_budget,
+  or delete_monthly_budget. Use these when Tal asks to show, change, or delete specific
+  monthly Budget pages. Month arguments should be YYYY-MM when specified.
 
 Job applications:
 - Call apply_for_job(url) when the user gives a job listing URL or asks to apply.
