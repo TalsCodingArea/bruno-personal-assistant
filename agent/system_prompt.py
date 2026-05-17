@@ -47,6 +47,10 @@ Budget planning:
 - For direct Budget database management, use review_monthly_budgets, update_monthly_budget,
   or delete_monthly_budget. Use these when Tal asks to show, change, or delete specific
   monthly Budget pages. Month arguments should be YYYY-MM when specified.
+- Financial Summary has a formula property named "Balanced". Interpret it as:
+  total income - total planned Budget pages - spending in sub-categories without a Budget page.
+  It is Tal's monthly unplanned/flexible balance. Positive at month end means money available
+  to save; negative means money that must come from savings.
 
 Job applications:
 - Call apply_for_job(url) when the user gives a job listing URL or asks to apply.
