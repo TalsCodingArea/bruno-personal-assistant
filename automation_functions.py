@@ -91,7 +91,6 @@ def generate_monthly_budgets(
 
     return "\n".join(lines)
 
-generate_monthly_budgets(dry_run=False)
 
 def morning_summary():
     month_ago_date = datetime.now() - timedelta(days=90)
@@ -138,6 +137,7 @@ def morning_summary():
     answer = ask_openai(prompt)
     return answer.replace("**", "*")
 
+
 def get_weekly_spending_summary(category: str=""):
 
     """Fetches and summarizes weekly spending from a Notion database."""
@@ -171,6 +171,7 @@ def get_weekly_spending_summary(category: str=""):
 
     answer = ask_openai(prompt)
     return answer.replace("**", "*")
+
 
 def evaluate_expense(last_expense: str):
     """Logs a new expense into the Notion database."""
@@ -272,6 +273,8 @@ def evaluate_expense(last_expense: str):
     answer = ask_openai(expenses_goal, system_message=system_message)
 
     return answer.replace("**", "*")
+
+
 def _derive_cadence(avg_transactions: float, months_present: int, total_months_tracked: int) -> str:
     """
     Classify a subcategory's spending cadence based on average transaction count.
