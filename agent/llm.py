@@ -12,4 +12,4 @@ def get_llm(model: str | None = None):
     """
     chosen_model = model or os.getenv("ASSISTANT_LLM_MODEL", "gpt-4o-mini")
     temperature = float(os.getenv("ASSISTANT_LLM_TEMPERATURE", 0.7))
-    return ChatOpenAI(model=chosen_model, temperature=temperature)
+    return ChatOpenAI(model=chosen_model, temperature=temperature, streaming=True)

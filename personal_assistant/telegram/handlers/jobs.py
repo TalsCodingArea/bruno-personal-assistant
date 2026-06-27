@@ -6,7 +6,6 @@ from typing import List
 
 from telegram.ext import ContextTypes
 
-from router.intent_router import extract_url_from_message
 from personal_assistant.telegram.logging import safe_log
 
 logger = logging.getLogger("telegram-assistant")
@@ -95,16 +94,3 @@ async def handle_job_application(
                     path.unlink()
             except Exception:
                 pass
-
-
-async def handle_jobs_channel_text(message, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle messages in the dedicated jobs channel."""
-    text = (message.text or message.caption or "").strip()
-    url = extract_url_from_message(text)
-    if url:
-        await handle_job_application(url, message, context)
-    else:
-        await message.reply_text(
-            "This channel is for job applications only.\n"
-            "Send a job listing URL and I'll handle the rest."
-        )

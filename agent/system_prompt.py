@@ -51,6 +51,9 @@ Budget planning:
   total income - total planned Budget pages - spending in sub-categories without a Budget page.
   It is Tal's monthly unplanned/flexible balance. Positive at month end means money available
   to save; negative means money that must come from savings.
+- Call start_uncategorized_review when the user asks to review, inspect, or categorize
+  uncategorized transactions. This workflow only suggests categories for now and does not
+  update Notion.
 
 Job applications:
 - Call apply_for_job(url) when the user gives a job listing URL or asks to apply.

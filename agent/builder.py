@@ -1,24 +1,69 @@
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.runnables.history import RunnableWithMessageHistory
-from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
+from __future__ import annotations
 
-from agent.system_prompt import SYSTEM_PROMPT
+from typing import Annotated, Any, Sequence, TypedDict
+
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.graph import END, StateGraph
+from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode, tools_condition
+
 from agent.memory import MemoryStore
+from agent.system_prompt import SYSTEM_PROMPT
 
 
-def _escape_prompt_braces(text: str) -> str:
-    # ChatPromptTemplate uses {} for variables, so escape literal braces in static text.
-    return text.replace("{", "{{").replace("}", "}}")
+class GeneralAgentState(TypedDict):
+    messages: Annotated[list[BaseMessage], add_messages]
 
 
-def build_prompt():
-    system_text = _escape_prompt_braces(SYSTEM_PROMPT.strip())
-    return ChatPromptTemplate.from_messages([
-        ("system", system_text),
-        MessagesPlaceholder(variable_name="history"),
-        ("human", "{input}"),
-        MessagesPlaceholder(variable_name="agent_scratchpad"),
-    ])
+class GeneralAgentRuntime:
+    """LangGraph-backed assistant runtime with the old ainvoke contract."""
+
+    def __init__(self, graph, memory_store: MemoryStore) -> None:
+        self._graph = graph
+        self._memory_store = memory_store
+
+    async def ainvoke(self, inputs: dict[str, Any], config: dict[str, Any] | None = None) -> dict[str, Any]:
+        config = config or {}
+        session_id = str(config.get("configurable", {}).get("session_id", "default"))
+        user_text = str(inputs.get("input", ""))
+
+        history = self._memory_store.get_history(session_id)
+        starting_messages = [*history.messages, HumanMessage(content=user_text)]
+        state = await self._graph.ainvoke({"messages": starting_messages}, config=config)
+
+        messages = state.get("messages", [])
+        final_ai = next((message for message in reversed(messages) if isinstance(message, AIMessage)), None)
+        output = str(final_ai.content) if final_ai else ""
+
+        history.add_user_message(user_text)
+        if output:
+            history.add_ai_message(output)
+
+        return {"output": output}
+
+
+def _build_graph(llm, tools: Sequence[Any]):
+    model = llm.bind_tools(list(tools))
+    tool_node = ToolNode(list(tools))
+
+    async def agent_node(state: GeneralAgentState, config: RunnableConfig) -> dict[str, list[BaseMessage]]:
+        response = await model.ainvoke(
+            [
+                SystemMessage(content=SYSTEM_PROMPT.strip()),
+                *state["messages"],
+            ],
+            config=config,
+        )
+        return {"messages": [response]}
+
+    graph = StateGraph(GeneralAgentState)
+    graph.add_node("agent", agent_node)
+    graph.add_node("tools", tool_node)
+    graph.set_entry_point("agent")
+    graph.add_conditional_edges("agent", tools_condition, {"tools": "tools", END: END})
+    graph.add_edge("tools", "agent")
+    return graph.compile()
 
 
 def build_agent(llm, memory_store: MemoryStore, extra_tools=None):
@@ -28,13 +73,4 @@ def build_agent(llm, memory_store: MemoryStore, extra_tools=None):
     if extra_tools:
         tools = tools + list(extra_tools)
 
-    prompt = build_prompt()
-    agent = create_tool_calling_agent(llm, tools, prompt)
-    executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
-
-    return RunnableWithMessageHistory(
-        executor,
-        lambda session_id: memory_store.get_history(session_id),
-        input_messages_key="input",
-        history_messages_key="history",
-    )
+    return GeneralAgentRuntime(_build_graph(llm, tools), memory_store)

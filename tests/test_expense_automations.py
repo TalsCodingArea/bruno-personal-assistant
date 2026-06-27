@@ -1,0 +1,72 @@
+from __future__ import annotations
+
+import importlib
+import os
+import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
+
+
+os.environ.setdefault("NOTION_API_KEY", "test-notion-key")
+os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
+
+automation_functions = importlib.import_module("automation_functions")
+
+
+class ExpenseAutomationTest(unittest.TestCase):
+    @patch.object(automation_functions, "date")
+    @patch.object(automation_functions, "log_expense")
+    def test_auto_expense_tool_logs_uncategorized_expense_for_today(self, log_expense, date_mock) -> None:
+        date_mock.today.return_value.isoformat.return_value = "2026-06-27"
+        log_expense.return_value = "logged"
+
+        result = automation_functions.auto_expense_tool(description="Coffee", amount=12.5)
+
+        self.assertEqual(result, "logged")
+        log_expense.assert_called_once_with(
+            Description="Coffee",
+            Amount=12.5,
+            Date="2026-06-27",
+            Category=["Uncategorized"],
+        )
+
+    def test_auto_expense_tool_rejects_invalid_values(self) -> None:
+        with self.assertRaises(ValueError):
+            automation_functions.auto_expense_tool(description="", amount=12.5)
+        with self.assertRaises(ValueError):
+            automation_functions.auto_expense_tool(description="Coffee", amount=0)
+        with self.assertRaises(ValueError):
+            automation_functions.auto_expense_tool(description="Coffee", amount="nope")
+
+    @patch.object(automation_functions, "auto_expense_tool")
+    @patch.object(automation_functions.openai_client.chat.completions, "create")
+    def test_log_txt_expense_extracts_hebrew_sms_transaction(self, create, auto_expense_tool) -> None:
+        create.return_value = SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content='{"description": "פיזיקל טכנולוגי", "amount": 400}')
+                )
+            ]
+        )
+        auto_expense_tool.return_value = "logged"
+
+        result = automation_functions.log_txt_expense(
+            "היי, ב 26/06 קיבלנו בקשה לעסקת אינטרנט/טלפון בכרטיס מסטרקארד "
+            "המסתיים ב 0273 בפיזיקל טכנולוגי\nבסך 400 שח."
+        )
+
+        self.assertEqual(result, "logged")
+        auto_expense_tool.assert_called_once_with(description="פיזיקל טכנולוגי", amount=400.0)
+
+    @patch.object(automation_functions.openai_client.chat.completions, "create")
+    def test_log_txt_expense_rejects_malformed_llm_output(self, create) -> None:
+        create.return_value = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="not json"))]
+        )
+
+        with self.assertRaises(ValueError):
+            automation_functions.log_txt_expense("transaction text")
+
+
+if __name__ == "__main__":
+    unittest.main()

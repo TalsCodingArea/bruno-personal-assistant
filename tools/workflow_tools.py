@@ -79,3 +79,23 @@ def make_job_tool(chat_id: str, pending_jobs: dict):
         return "Job application pipeline started — I'll send the documents shortly."
 
     return apply_for_job
+
+
+def make_uncategorized_review_tool(uncategorized_review_graph):
+    """Return a tool that runs the one-shot uncategorized expenses review workflow."""
+
+    @tool
+    async def start_uncategorized_review() -> str:
+        """
+        Review uncategorized Tal expenses.
+        Use this when the user asks to review, categorize, or inspect uncategorized
+        transactions. This version only returns suggestions and does not update Notion.
+        """
+        from agent.uncategorized_workflow import async_start_uncategorized_review
+
+        state = await async_start_uncategorized_review(uncategorized_review_graph)
+        msgs = state.get("messages", [])
+        last_ai = next((m for m in reversed(msgs) if isinstance(m, AIMessage)), None)
+        return last_ai.content if last_ai else "No uncategorized review result was generated."
+
+    return start_uncategorized_review

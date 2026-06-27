@@ -13,11 +13,13 @@ from agent.budget_workflow import (
 from agent.builder import build_agent
 from agent.llm import get_llm
 from agent.memory import MemoryStore
+from agent.uncategorized_workflow import create_uncategorized_review_graph
 
 llm = get_llm()
 memory = MemoryStore()
 budget_graph = create_budget_graph(llm)
 budget_review_graph = create_budget_review_graph(llm)
+uncategorized_review_graph = create_uncategorized_review_graph()
 
 # chat_id (str) -> LangGraph thread_id for the active budget session.
 budget_sessions: Dict[str, str] = {}
@@ -44,6 +46,7 @@ def get_or_build_agent(chat_id: str):
             pending_jobs,
             budget_review_graph,
             budget_review_sessions,
+            uncategorized_review_graph,
         )
         agents[chat_id] = build_agent(llm, memory, extra_tools=workflow_tools)
     return agents[chat_id]

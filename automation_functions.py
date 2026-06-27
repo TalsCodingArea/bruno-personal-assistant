@@ -500,8 +500,6 @@ def update_spending_habits():
     return f"✅ Spending habits updated for {month_label} — {n_cats} categories, {n_subs} subcategories tracked."
 
 
-EXPENSES_DATABASE_ID = "c9d8d125ec454f2f8a72ba97493bcb56"
-
 EXPENSE_REQUIRED_PROPERTIES = ("Description", "Amount", "Date")
 
 EXPENSE_PROPERTY_TYPES = {
@@ -751,6 +749,95 @@ def _build_expense_notion_properties(raw_properties: Dict[str, Any]) -> Dict[str
     return notion_properties
 
 
+def auto_expense_tool(description: str, amount: float):
+    """
+    Log an uncategorized credit-card expense with today's date.
+
+    Automation payload example:
+    {
+      "tool": "auto_expense_tool",
+      "args": {"description": "Coffee", "amount": 12.5}
+    }
+    """
+    description_value = _require_text("description", description)
+    amount_value = _coerce_number("amount", amount)
+    if amount_value <= 0:
+        raise ValueError("`amount` must be positive.")
+
+    return log_expense(
+        Description=description_value,
+        Amount=amount_value,
+        Date=date.today().isoformat(),
+        Category=["Uncategorized"],
+    )
+
+
+def _strip_json_markdown(text: str) -> str:
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    lines = stripped.splitlines()
+    if len(lines) >= 2 and lines[-1].strip() == "```":
+        first = lines[0].strip().lower()
+        if first in ("```", "```json"):
+            return "\n".join(lines[1:-1]).strip()
+    return stripped
+
+
+def _parse_expense_text_with_llm(text: str) -> Dict[str, Any]:
+    message_text = _require_text("text", text)
+    model = os.getenv("ASSISTANT_LLM_MODEL", "gpt-4o-mini")
+    prompt = f"""Extract one credit-card transaction from this SMS.
+
+Return only valid JSON with this exact shape:
+{{"description": "<merchant name>", "amount": <number>}}
+
+Rules:
+- The description is the merchant name, not the card company.
+- In Hebrew CAL messages, the merchant often appears after the card suffix and starts with "ב"; omit that leading "ב".
+- Amount is in Israeli shekels when the text says "שח", "₪", "ILS", or similar.
+- Do not infer category or subcategory.
+
+SMS:
+{message_text}
+"""
+
+    response = openai_client.chat.completions.create(
+        model=model,
+        temperature=0,
+        messages=[
+            {"role": "system", "content": "You extract expense transaction data and return strict JSON only."},
+            {"role": "user", "content": prompt},
+        ],
+    )
+    content = response.choices[0].message.content or ""
+    try:
+        parsed = json.loads(_strip_json_markdown(content))
+    except json.JSONDecodeError as exc:
+        raise ValueError("LLM did not return valid JSON.") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("LLM response must be a JSON object.")
+    return parsed
+
+
+def log_txt_expense(text: str):
+    """
+    Parse a credit-card SMS with an LLM and log it as an uncategorized expense.
+
+    Automation payload example:
+    {
+      "tool": "log_txt_expense",
+      "args": {"text": "היי, ... בסך 400 שח."}
+    }
+    """
+    parsed = _parse_expense_text_with_llm(text)
+    description = _require_text("description", parsed.get("description"))
+    amount = _coerce_number("amount", parsed.get("amount"))
+    if amount <= 0:
+        raise ValueError("`amount` must be positive.")
+    return auto_expense_tool(description=description, amount=amount)
+
+
 def log_expense(**properties):
     """
     Create an expense row in the Notion expenses database.
@@ -769,7 +856,9 @@ def log_expense(**properties):
       }
     }
     """
-    database_id = os.getenv("EXPENSES_DATABASE_ID") or EXPENSES_DATABASE_ID
+    database_id = os.getenv("EXPENSES_DATABASE_ID")
+    if not database_id:
+        raise ValueError("Missing EXPENSES_DATABASE_ID environment variable.")
     notion_properties = _build_expense_notion_properties(properties)
     page = notion_client.pages.create(
         parent={"database_id": database_id},

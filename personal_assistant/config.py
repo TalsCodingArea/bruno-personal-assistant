@@ -15,8 +15,6 @@ class TelegramChannels:
     personal_assistant: str
     logs: str
     automations: str
-    jobs: str
-    nutritionist: str
 
     def as_dict(self) -> Dict[str, str]:
         return {
@@ -24,8 +22,6 @@ class TelegramChannels:
             "personal_assistant": self.personal_assistant,
             "logs": self.logs,
             "automations": self.automations,
-            "jobs": self.jobs,
-            "nutritionist": self.nutritionist,
         }
 
 
@@ -57,8 +53,6 @@ def load_settings() -> Settings:
             personal_assistant=os.getenv("TELEGRAM_CHAT_ID_PERSONAL_ASSISTANT", ""),
             logs=os.getenv("TELEGRAM_CHAT_ID_LOGS", ""),
             automations=os.getenv("TELEGRAM_CHAT_ID_AUTOMATIONS", ""),
-            jobs=os.getenv("TELEGRAM_CHAT_ID_JOBS", ""),
-            nutritionist=os.getenv("TELEGRAM_CHAT_ID_NUTRITIONIST", ""),
         ),
         receipt_category_options=receipt_category_options,
     )

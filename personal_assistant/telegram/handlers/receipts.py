@@ -11,8 +11,8 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from personal_assistant.config import settings
+from personal_assistant.telegram.formatting import markdown_v2_safe
 from personal_assistant.telegram.logging import safe_log
-from tools.telegram_tools import markdown_v2_safe
 
 logger = logging.getLogger("telegram-assistant")
 

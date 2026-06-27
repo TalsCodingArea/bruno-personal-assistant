@@ -44,9 +44,22 @@ def get_tools():
     ]
 
 
-def get_workflow_tools(chat_id: str, budget_graph, budget_sessions: dict, pending_jobs: dict, budget_review_graph=None, budget_review_sessions: dict = None):
+def get_workflow_tools(
+    chat_id: str,
+    budget_graph,
+    budget_sessions: dict,
+    pending_jobs: dict,
+    budget_review_graph=None,
+    budget_review_sessions: dict = None,
+    uncategorized_review_graph=None,
+):
     """Session-bound workflow trigger tools, created once per chat_id."""
-    from tools.workflow_tools import make_budget_tool, make_job_tool, make_budget_review_tool
+    from tools.workflow_tools import (
+        make_budget_review_tool,
+        make_budget_tool,
+        make_job_tool,
+        make_uncategorized_review_tool,
+    )
 
     tools = [
         make_budget_tool(chat_id, budget_graph, budget_sessions),
@@ -54,4 +67,6 @@ def get_workflow_tools(chat_id: str, budget_graph, budget_sessions: dict, pendin
     ]
     if budget_review_graph is not None and budget_review_sessions is not None:
         tools.append(make_budget_review_tool(chat_id, budget_review_graph, budget_review_sessions))
+    if uncategorized_review_graph is not None:
+        tools.append(make_uncategorized_review_tool(uncategorized_review_graph))
     return tools

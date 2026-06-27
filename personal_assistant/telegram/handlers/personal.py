@@ -2,18 +2,74 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+import random
 
 from langchain_core.messages import AIMessage
+from telegram import Message
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from agent.workflow import AgentEvent, stream_agent_events
 from personal_assistant import runtime
+from personal_assistant.telegram.formatting import markdown_v2_safe
 from personal_assistant.telegram.handlers.jobs import handle_job_application
 from personal_assistant.telegram.logging import safe_log
 from router.intent_router import extract_url_from_message, is_cancel_intent, is_job_url_fast
-from tools.telegram_tools import TelegramStatusCallback, markdown_v2_safe
 
 logger = logging.getLogger("telegram-assistant")
+
+
+_TOOL_STATUS: dict[str, str] = {
+    "get_expenses_between_dates": "🔍 Fetching expenses...",
+    "get_income_between_dates": "🔍 Fetching income...",
+    "get_last_expenses": "🔍 Fetching recent expenses...",
+    "get_finance_rules": "📋 Loading finance rules...",
+    "get_database_schema": "📋 Loading database schema...",
+    "get_movies_data_from_notion_database": "🎬 Fetching movies...",
+    "create_idea_in_notion": "💡 Saving idea to Notion...",
+    "get_exchange_rates": "💱 Fetching exchange rates...",
+    "get_tase_stock_quote": "📈 Fetching stock quote...",
+    "get_tase_index": "📊 Fetching market index...",
+    "web_search": "🌐 Searching the web...",
+}
+_DEFAULT_TOOL_STATUS = "⚙️ Working on it..."
+_RESPONSE_EDIT_INTERVAL_SECONDS = 0.7
+_RESPONSE_EDIT_MIN_CHARS = 32
+
+_INITIAL_PROCESSING_STATUSES = [
+                            "⏳ Working on it...",
+                            "🔍 Thinking...",
+                            "💭 Processing...",
+                            "🧠 Crunching numbers...",
+                            "🔎 Investigating...",
+                            "📝 Reviewing information...",
+                            "🔬 Examining details...",
+                            "🛠️ Working on it...",
+                            "⏱️ Processing request...",
+                            "📈 Evaluating options...",
+                            "🧩 Piecing things together...",
+                            "🗂️ Organizing information...",
+                            "🖋️ Drafting response...",
+                            "🧪 Experimenting...",
+                            "🧭 Navigating through data...",
+                            "🧵 Unraveling details...",
+                            "🗃️ Sorting through information..."
+                        ]
+_POST_TOOL_PROCESSING_STATUSES = [
+                            "⚙️ Analysing results...",
+                            "🔍 Reviewing tool output...",
+                            "🧠 Processing tool results...",
+                            "📝 Summarizing findings...",
+                            "📊 Evaluating tool data...",
+                            "🧩 Piecing together insights...",
+                            "🗂️ Organizing tool information...",
+                            "🖋️ Drafting response based on tool output...",
+                            "🧪 Experimenting with tool results...",
+                            "🧭 Navigating through data...",
+                            "🧵 Unraveling tool details...",
+                            "🗃️ Sorting through tool information..."
+                        ]
 
 
 async def _keep_typing(bot, chat_id: int, stop_event: asyncio.Event) -> None:
@@ -24,6 +80,68 @@ async def _keep_typing(bot, chat_id: int, stop_event: asyncio.Event) -> None:
         except Exception:
             pass
         await asyncio.sleep(4)
+
+
+def _telegram_status_text(event: AgentEvent) -> str | None:
+    if event.type == "processing":
+        return random.choice(_POST_TOOL_PROCESSING_STATUSES) if event.message == "Processing tool result" else random.choice(_INITIAL_PROCESSING_STATUSES)
+    if event.type == "tool_calling":
+        return _TOOL_STATUS.get(event.tool_name or "", _DEFAULT_TOOL_STATUS)
+    if event.type == "generating_response":
+        return "✍️ Generating response..."
+    if event.type == "done":
+        return "✅ Done"
+    return None
+
+
+async def _edit_status(bot, chat_id: int, message_id: int, text: str, current_text: str) -> str:
+    if text == current_text:
+        return current_text
+    try:
+        await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text)
+        return text
+    except Exception:
+        return current_text
+
+
+async def _edit_response_text(
+    bot,
+    *,
+    chat_id: int,
+    message_id: int,
+    text: str,
+    parse_mode: str | None = None,
+) -> bool:
+    try:
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            parse_mode=parse_mode,
+        )
+        return True
+    except Exception:
+        return False
+
+
+async def _finalize_response_message(
+    message,
+    context: ContextTypes.DEFAULT_TYPE,
+    streamed_message: Message | None,
+    response: str,
+) -> None:
+    formatted = markdown_v2_safe(response, preserve_formatting=True)
+    if streamed_message:
+        updated = await _edit_response_text(
+            context.bot,
+            chat_id=message.chat_id,
+            message_id=streamed_message.message_id,
+            text=formatted,
+            parse_mode="MarkdownV2",
+        )
+        if updated:
+            return
+    await message.reply_text(formatted, parse_mode="MarkdownV2")
 
 
 async def _handle_budget_review(
@@ -137,15 +255,50 @@ async def handle_personal_assistant_text(update: Update, context: ContextTypes.D
     status_msg = await message.reply_text("⏳ Working on it...")
     stop_typing = asyncio.Event()
     typing_task = asyncio.create_task(_keep_typing(context.bot, message.chat_id, stop_typing))
+    out = {}
+    current_status = "⏳ Working on it..."
+    streamed_message: Message | None = None
+    streamed_text = ""
+    last_streamed_text = ""
+    last_stream_edit_at = 0.0
     try:
-        callback = TelegramStatusCallback(context.bot, message.chat_id, status_msg.message_id)
-        out = await agent.ainvoke(
-            {"input": user_text},
-            config={
-                "configurable": {"session_id": chat_id},
-                "callbacks": [callback],
-            },
-        )
+        async for event in stream_agent_events(agent, session_id=chat_id, user_text=user_text):
+            status_text = _telegram_status_text(event)
+            if status_text:
+                current_status = await _edit_status(
+                    context.bot,
+                    message.chat_id,
+                    status_msg.message_id,
+                    status_text,
+                    current_status,
+                )
+            if event.type == "response_delta" and event.content_delta:
+                streamed_text += event.content_delta
+                now = time.monotonic()
+                should_edit = (
+                    streamed_message is None
+                    or len(streamed_text) - len(last_streamed_text) >= _RESPONSE_EDIT_MIN_CHARS
+                    or now - last_stream_edit_at >= _RESPONSE_EDIT_INTERVAL_SECONDS
+                )
+                if should_edit:
+                    if streamed_message is None:
+                        streamed_message = await message.reply_text(streamed_text)
+                    else:
+                        await _edit_response_text(
+                            context.bot,
+                            chat_id=message.chat_id,
+                            message_id=streamed_message.message_id,
+                            text=streamed_text,
+                        )
+                    last_streamed_text = streamed_text
+                    last_stream_edit_at = now
+            if event.type == "done":
+                out = event.output or {}
+            elif event.type == "error":
+                logger.error("Agent error for chat %s: %s", chat_id, event.error)
+                await message.reply_text("Something went wrong — try again.")
+                await safe_log(context, f"[agent:error] {event.error}")
+                return
     except Exception as exc:
         logger.exception("Agent error for chat %s", chat_id)
         await message.reply_text("Something went wrong — try again.")
@@ -164,14 +317,11 @@ async def handle_personal_assistant_text(update: Update, context: ContextTypes.D
     if chat_id in runtime.pending_jobs:
         url = runtime.pending_jobs.pop(chat_id)
         if response:
-            await message.reply_text(
-                markdown_v2_safe(response, preserve_formatting=True),
-                parse_mode="MarkdownV2",
-            )
+            await _finalize_response_message(message, context, streamed_message, response)
         await handle_job_application(url, message, context)
         return
 
     if response:
-        await message.reply_text(markdown_v2_safe(response, preserve_formatting=True), parse_mode="MarkdownV2")
+        await _finalize_response_message(message, context, streamed_message, response)
     else:
         await message.reply_text("Sorry, I couldn't generate a response for that.")
