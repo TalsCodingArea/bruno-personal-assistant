@@ -749,7 +749,7 @@ def _build_expense_notion_properties(raw_properties: Dict[str, Any]) -> Dict[str
     return notion_properties
 
 
-def auto_expense_tool(description: str, amount: float):
+def auto_log_expense(description: str, amount: float):
     """
     Log an uncategorized credit-card expense with today's date.
 
