@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, Optional
 from dotenv import load_dotenv
 from notion_client import Client
 
+from notion_config.loader import NotionConfigLoader
 from tools.monthly_budget.models import Month
 from tools.monthly_budget.notion_preview import build_monthly_budget_preview
 
@@ -43,9 +44,19 @@ def _notion_client() -> Client:
 
 def _database_id(env_name: str) -> str:
     value = os.getenv(env_name, "").strip()
-    if not value:
-        raise ValueError(f"Missing {env_name} environment variable.")
-    return value
+    if value:
+        return value
+    config_name_by_env = {
+        "BUDGET_DATABASE_ID": "budget",
+        "FINANCIAL_SUMMARY_DATABASE_ID": "financial_summary",
+    }
+    config_name = config_name_by_env.get(env_name)
+    if config_name:
+        try:
+            return NotionConfigLoader().get_database_id(config_name)
+        except Exception:
+            pass
+    raise ValueError(f"Missing {env_name} environment variable.")
 
 
 def _plain_title(title_items: Iterable[Dict[str, Any]]) -> str:
@@ -334,11 +345,17 @@ def build_and_upsert_monthly_budget_pages(
     lookback_months: int = 6,
     dry_run: bool = True,
     include_non_predictable: bool = False,
+    savings_rate: float = 0.0,
+    safety_buffer_rate: float = 0.0,
+    fallback_income: Optional[float] = None,
 ) -> Dict[str, Any]:
     preview = build_monthly_budget_preview(
         target_month=target_month,
         as_of=as_of,
         lookback_months=lookback_months,
+        savings_rate=savings_rate,
+        safety_buffer_rate=safety_buffer_rate,
+        fallback_income=fallback_income,
     )
     result = upsert_monthly_budget_pages_from_preview(
         preview,

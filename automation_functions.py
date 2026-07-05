@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta
 from dotenv import load_dotenv
 import os
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 load_dotenv()
@@ -431,7 +432,7 @@ def review_budget():
 
     if deviations:
         lines.append(f"\n⚠️ Over budget by >20%: {', '.join(deviations)}")
-        lines.append("Send 'start_budget_review' to the personal assistant to adjust.")
+        lines.append("Ask the personal assistant to review monthly budget status and adjust the affected categories.")
     else:
         lines.append("\n✅ All categories within budget.")
 
@@ -749,7 +750,42 @@ def _build_expense_notion_properties(raw_properties: Dict[str, Any]) -> Dict[str
     return notion_properties
 
 
-def auto_expense_tool(description: str, amount: float):
+_NON_SHEKEL_CURRENCY_RE = re.compile(
+    r"(\$|€|£|\bUSD\b|\bEUR\b|\bGBP\b|\bDOLLARS?\b|\bEUROS?\b)",
+    re.IGNORECASE,
+)
+_SHEKEL_CURRENCY_RE = re.compile(r"(₪|\bILS\b|\bNIS\b|ש\s*\"?\s*ח|שקל)", re.IGNORECASE)
+_AMOUNT_NUMBER_RE = re.compile(r"[-+]?\d[\d,]*(?:\.\d+)?")
+
+
+def _coerce_auto_expense_amount(amount: Any) -> float | None:
+    """
+    Return an ILS amount for auto expense logging.
+
+    Numeric values are accepted as ILS. Strings must be explicitly shekel-denominated
+    (for example: "₪75.00"). Foreign-currency strings are skipped because the final
+    shekel charge can include unknown credit-card conversion and commission.
+    """
+    if isinstance(amount, (int, float)) and not isinstance(amount, bool):
+        return float(amount)
+    if not isinstance(amount, str):
+        raise ValueError("`amount` must be a number or shekel amount string.")
+
+    text = amount.strip()
+    if not text:
+        raise ValueError("`amount` must be a number or shekel amount string.")
+    if _NON_SHEKEL_CURRENCY_RE.search(text):
+        return None
+    if not _SHEKEL_CURRENCY_RE.search(text):
+        raise ValueError("String `amount` must include a shekel currency marker.")
+
+    match = _AMOUNT_NUMBER_RE.search(text)
+    if not match:
+        raise ValueError("String `amount` must include a numeric amount.")
+    return float(match.group(0).replace(",", ""))
+
+
+def auto_expense_tool(description: str, amount: float | str):
     """
     Log an uncategorized credit-card expense with today's date.
 
@@ -760,7 +796,9 @@ def auto_expense_tool(description: str, amount: float):
     }
     """
     description_value = _require_text("description", description)
-    amount_value = _coerce_number("amount", amount)
+    amount_value = _coerce_auto_expense_amount(amount)
+    if amount_value is None:
+        return f"Skipped non-shekel expense: {description_value} — {amount}"
     if amount_value <= 0:
         raise ValueError("`amount` must be positive.")
 

@@ -53,8 +53,8 @@ Core domains:
     │       ├── Tools: Notion CRUD, receipt OCR, movie search, ideas
     │       ├── Events: processing, tool_calling, generating_response, response_delta, done
     │       └── Memory: per-session chat history keyed by chat_id
-    ├── Budget Workflows (LangGraph)
-    │       └── interactive monthly budget and budget review flows
+    ├── Financial Advisor Capability (LangGraph)
+    │       └── finance routing, affordability checks, budget tools, and saving plans
     └── Job Application Pipeline
             scrape → parse → research → generate docs → log to Notion
 ```
@@ -69,7 +69,7 @@ Core domains:
 ├── app.py                        # Thin Telegram bot entry point
 ├── personal_assistant/
 │   ├── config.py                 # Environment-backed settings and channel IDs
-│   ├── runtime.py                # Shared LLM, memory, graphs, session maps
+│   ├── runtime.py                # Shared LLM, memory, financial graph, session maps
 │   └── telegram/
 │       ├── bot.py                # Application creation and handler registration
 │       ├── routing.py            # Channel-based Telegram routing

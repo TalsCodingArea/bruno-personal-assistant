@@ -2,7 +2,7 @@
 tools/budget_tools.py — Monthly budget analysis and planning utilities.
 
 All functions here are pure Python / Notion queries — no LLM calls.
-LLM usage is intentionally kept in agent/budget_workflow.py (parsing user inputs only).
+LLM usage is handled by the main assistant / financial capability graph.
 
 Key functions:
   fetch_monthly_expenses(year, month)          → List of expense dicts

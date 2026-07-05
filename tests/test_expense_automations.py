@@ -38,6 +38,45 @@ class ExpenseAutomationTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             automation_functions.auto_expense_tool(description="Coffee", amount="nope")
 
+    @patch.object(automation_functions, "date")
+    @patch.object(automation_functions, "log_expense")
+    def test_auto_expense_tool_extracts_shekel_string_amount(self, log_expense, date_mock) -> None:
+        date_mock.today.return_value.isoformat.return_value = "2026-06-27"
+        log_expense.return_value = "logged"
+
+        result = automation_functions.auto_expense_tool(description="Coffee", amount="₪75.00")
+
+        self.assertEqual(result, "logged")
+        log_expense.assert_called_once_with(
+            Description="Coffee",
+            Amount=75.0,
+            Date="2026-06-27",
+            Category=["Uncategorized"],
+        )
+
+    @patch.object(automation_functions, "date")
+    @patch.object(automation_functions, "log_expense")
+    def test_auto_expense_tool_extracts_comma_formatted_shekel_amount(self, log_expense, date_mock) -> None:
+        date_mock.today.return_value.isoformat.return_value = "2026-06-27"
+        log_expense.return_value = "logged"
+
+        result = automation_functions.auto_expense_tool(description="Device", amount="₪1,234.56")
+
+        self.assertEqual(result, "logged")
+        log_expense.assert_called_once_with(
+            Description="Device",
+            Amount=1234.56,
+            Date="2026-06-27",
+            Category=["Uncategorized"],
+        )
+
+    @patch.object(automation_functions, "log_expense")
+    def test_auto_expense_tool_skips_non_shekel_string_amount(self, log_expense) -> None:
+        result = automation_functions.auto_expense_tool(description="Subscription", amount="$15.00")
+
+        self.assertEqual(result, "Skipped non-shekel expense: Subscription — $15.00")
+        log_expense.assert_not_called()
+
     @patch.object(automation_functions, "auto_expense_tool")
     @patch.object(automation_functions.openai_client.chat.completions, "create")
     def test_log_txt_expense_extracts_hebrew_sms_transaction(self, create, auto_expense_tool) -> None:

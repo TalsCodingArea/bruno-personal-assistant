@@ -12,12 +12,26 @@ _CANCEL_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Budget planning trigger phrases → always budget
+# Budget planning trigger phrases → finance capability
 _BUDGET_RE = re.compile(
     r"\b(set|plan|start|do|run|review)\s+(my\s+)?(monthly\s+)?budget\b"
     r"|monthly\s+budget"
     r"|\bbudget\s+(review|plan|workflow|for\s+(this\s+)?month)\b"
     r"|plan\s+my\s+(finances|budget|month)",
+    re.IGNORECASE,
+)
+
+_FINANCE_RE = re.compile(
+    r"\b("
+    r"afford|can\s+i\s+buy|should\s+i\s+buy|want\s+to\s+buy|thinking\s+of\s+buying|"
+    r"desire|bank\s+balance|balance|checking\s+account|cash\s+available|"
+    r"emergency\s+fund|months\s+of\s+budget|safety\s+net|"
+    r"future\s+payment|subscription\s+renewal|yearly\s+cost|annual|renewal|"
+    r"license|tuition|insurance|due\s+in|"
+    r"savings?|invest(?:ing|ment)?|money|financial\s+situation|finances|"
+    r"future\s+purchases?|future\s+vacations?|vacations?|trips?|save\s+up|saving\s+plan|"
+    r"spending(?:\s+patterns?)?|expenses?|transactions?"
+    r")\b",
     re.IGNORECASE,
 )
 
@@ -51,10 +65,10 @@ INTENT_PROMPT = ChatPromptTemplate.from_messages([
         "system",
         (
             "Classify the user's message into ONE label: "
-            "'finance', 'movies', 'job_application', 'budget', or 'general'. "
+            "'finance', 'movies', 'job_application', or 'general'. "
             "Use 'job_application' when the message contains a job listing URL "
             "or asks to apply for / research a job position. "
-            "Use 'budget' when the user wants to plan, set, or review their monthly budget "
+            "Use 'finance' when the user wants to plan, set, or review their monthly budget "
             "(e.g. 'set my budget for this month', 'let's do the monthly budget', "
             "'budget review', 'plan my finances for the month'). "
             "Return only the label, nothing else."
@@ -66,16 +80,20 @@ INTENT_PROMPT = ChatPromptTemplate.from_messages([
 
 async def classify_intent(llm, text: str) -> str:
     """
-    Classify a user message into one of: finance, movies, job_application, budget, general.
+    Classify a user message into one of: finance, movies, job_application, general.
 
     Hardcoded regex runs first (zero LLM cost) for unambiguous patterns.
     Falls back to an LLM call for everything else.
     """
     stripped = (text or "").strip()
 
-    # Fast path 0: budget planning trigger
+    # Fast path 0: budget planning is handled by the finance capability.
     if _BUDGET_RE.search(stripped):
-        return "budget"
+        return "finance"
+
+    # Fast path 0.5: finance/advisor trigger
+    if _FINANCE_RE.search(stripped):
+        return "finance"
 
     # Fast path 1: explicit "apply <url>" / "job <url>" pattern
     if _JOB_URL_RE.search(stripped):
@@ -93,7 +111,9 @@ async def classify_intent(llm, text: str) -> str:
     # LLM fallback
     resp = await llm.ainvoke(INTENT_PROMPT.format_messages(text=stripped))
     label = (resp.content or "").strip().lower()
-    if label not in {"finance", "movies", "job_application", "budget", "general"}:
+    if label == "budget":
+        return "finance"
+    if label not in {"finance", "movies", "job_application", "general"}:
         return "general"
     return label
 
