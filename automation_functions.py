@@ -805,7 +805,7 @@ def auto_expense_tool(description: str, amount: float | str):
     return log_expense(
         Description=description_value,
         Amount=amount_value,
-        Date=date.today().isoformat(),
+        Date=datetime.now().isoformat(),
         Category=["Uncategorized"],
     )
 
