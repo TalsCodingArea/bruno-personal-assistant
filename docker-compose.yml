@@ -1,12 +1,15 @@
-version: "3.9"
 services:
   bot:
-    image: python:3.13-slim
-    working_dir: /app
+    build: .
     env_file: .env
-    command: ["bash","-lc","pip install --no-cache-dir -r requirements.txt && python -u app.py"]
-    volumes:
-      - ./:/app
-    restart: unless-stopped
     environment:
       PYTHONUNBUFFERED: "1"
+      TZ: Asia/Jerusalem
+    volumes:
+      # Gitignored, host-only data — not baked into the image (see .dockerignore)
+      - ./budget_data:/app/budget_data
+      - ./data:/app/data
+      - ./notion_config:/app/notion_config
+      - ./personal_notes_examples:/app/personal_notes_examples
+      - ./resume_data:/app/resume_data
+    restart: unless-stopped

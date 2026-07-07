@@ -5,7 +5,7 @@ description = "LangGraph-powered personal assistant with a Telegram gateway"
 requires-python = ">=3.13"
 dependencies = [
     "requests",
-    "orjson==3.10.7",
+    "orjson==3.10.18",
     "notion-client==2.3.0",
     "openai",
     "python-dotenv==1.1.1",

@@ -1,0 +1,23 @@
+.git
+.venv
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+.DS_Store
+.vscode
+.env
+.env.*
+
+# Not needed at runtime
+docs
+scripts
+tests
+README.md
+
+# Gitignored personal data — bind-mounted at runtime instead (see docker-compose.yml)
+budget_data
+data
+notion_config
+personal_notes_examples
+resume_data
