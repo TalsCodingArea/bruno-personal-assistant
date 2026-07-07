@@ -9,6 +9,7 @@ from langchain_core.tools import tool
 
 _BUDGET_DATA_DIR = Path(__file__).resolve().parents[2] / "budget_data"
 _PROFILE_PATH = _BUDGET_DATA_DIR / "financial_advisor_profile.json"
+_RECOMMENDATIONS_PATH = _BUDGET_DATA_DIR / "financial_recommendations.json"
 _DEFAULT_PROFILE = {
     "bank_account_balance": {
         "balance": None,
@@ -80,3 +81,62 @@ def update_emergency_fund_months(months: float) -> dict[str, Any]:
     profile["emergency_fund_months"] = float(months)
     _write_profile(profile)
     return {"ok": True, "emergency_fund_months": profile["emergency_fund_months"]}
+
+
+def _read_recommendations() -> list[dict[str, Any]]:
+    if not _RECOMMENDATIONS_PATH.exists():
+        return []
+    try:
+        content = _RECOMMENDATIONS_PATH.read_text(encoding="utf-8").strip()
+        return json.loads(content) if content else []
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def _write_recommendations(recommendations: list[dict[str, Any]]) -> None:
+    _RECOMMENDATIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _RECOMMENDATIONS_PATH.write_text(
+        json.dumps(recommendations, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+@tool
+def log_financial_recommendation(
+    recommendation: str,
+    recommendation_type: str = "General",
+    numbers_used: str = "",
+) -> dict[str, Any]:
+    """Persist a financial recommendation to local advisor memory."""
+    recommendations = _read_recommendations()
+    entry = {
+        "id": len(recommendations) + 1,
+        "date": datetime.now().date().isoformat(),
+        "type": recommendation_type,
+        "recommendation": recommendation,
+        "numbers_used": numbers_used,
+        "status": "Suggested",
+    }
+    recommendations.append(entry)
+    _write_recommendations(recommendations)
+    return {"ok": True, "recommendation": entry}
+
+
+@tool
+def get_financial_recommendations(status: str = "") -> dict[str, Any]:
+    """Return locally remembered financial recommendations, optionally filtered by status."""
+    recommendations = _read_recommendations()
+    if status:
+        recommendations = [item for item in recommendations if item.get("status") == status]
+    return {"recommendations": recommendations}
+
+
+@tool
+def update_financial_recommendation_status(recommendation_id: int, status: str) -> dict[str, Any]:
+    """Update the status of a remembered financial recommendation (Suggested/Accepted/Rejected/Done)."""
+    recommendations = _read_recommendations()
+    for entry in recommendations:
+        if entry.get("id") == recommendation_id:
+            entry["status"] = status
+            _write_recommendations(recommendations)
+            return {"ok": True, "recommendation": entry}
+    return {"ok": False, "error": f"No recommendation with id {recommendation_id}."}

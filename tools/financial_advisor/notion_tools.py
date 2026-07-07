@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from typing import Any
 
 from langchain_core.tools import tool
+from notion_client.errors import APIResponseError
 
 from notion_config.loader import NotionConfigLoader
 from tools.notion_tools import (
+    _build_notion_client,
     _extract_notion_property_content,
     get_expenses_between_dates,
     get_income_between_dates,
@@ -15,10 +17,7 @@ from tools.notion_tools import (
     notion_get_database_pages,
     update_financial_advisor_habit,
 )
-from tools.financial_advisor.memory import (
-    get_current_bank_balance,
-    update_bank_account_balance,
-)
+from tools.financial_advisor.memory import get_current_bank_balance
 
 _loader = NotionConfigLoader()
 
@@ -50,12 +49,6 @@ def _date_filter(property_name: str, start_date: str | None, end_date: str | Non
     if not filters:
         return None
     return {"and": filters} if len(filters) > 1 else filters[0]
-
-
-def _normalize_date(raw: str | None) -> str:
-    if raw:
-        return raw
-    return date.today().isoformat()
 
 
 def _properties(**items: tuple[str, Any]) -> dict[str, dict[str, Any]]:
@@ -108,7 +101,7 @@ def get_income_summary(start_date: str, end_date: str) -> dict[str, Any]:
 
 @tool
 def get_latest_account_balances(account: str | None = None) -> dict[str, Any]:
-    """Return the locally remembered bank account balance in the legacy balances shape."""
+    """Return the locally remembered bank account balance as a balances list."""
     balance = get_current_bank_balance.invoke({})
     if balance.get("balance") is None:
         return {"balances": []}
@@ -135,65 +128,41 @@ def get_current_budget(month: str = "") -> dict[str, Any]:
 
 
 @tool
-def get_future_obligations(
-    start_date: str | None = None,
-    end_date: str | None = None,
-    status: str = "Active",
-) -> dict[str, Any]:
-    """Return future financial obligations from Notion."""
-    filters = []
-    if status:
-        filters.append({"property": "Status", "select": {"equals": status}})
-    date_filter = _date_filter("Due Date", start_date, end_date)
-    if date_filter:
-        if "and" in date_filter:
-            filters.extend(date_filter["and"])
-        else:
-            filters.append(date_filter)
-    query_filter = {"and": filters} if len(filters) > 1 else (filters[0] if filters else None)
+def get_future_expenses(start_date: str | None = None, end_date: str | None = None) -> dict[str, Any]:
+    """Return planned future expenses (Name, Amount, Month) from Notion."""
     raw = notion_get_database_pages.invoke(
         {
-            "database_id": _database_id("future_financial_obligations"),
-            "filter": query_filter,
-            "sorts": [{"property": "Due Date", "direction": "ascending"}],
+            "database_id": _database_id("future_expenses"),
+            "filter": _date_filter("Month", start_date, end_date),
+            "sorts": [{"property": "Month", "direction": "ascending"}],
         }
     )
-    obligations = []
+    future_expenses = []
     for page in raw.get("results", []):
-        item = _page_summary(
-            page,
-            [
-                "Name",
-                "Amount",
-                "Due Date",
-                "Recurrence",
-                "Category",
-                "Importance",
-                "Reserve Start",
-                "Monthly Reserve",
-                "Status",
-                "Notes",
-                "Last Reviewed",
-            ],
-        )
-        obligations.append(
+        item = _page_summary(page, ["Name", "Amount", "Month"])
+        future_expenses.append(
             {
                 "id": item.get("id"),
                 "url": item.get("url"),
                 "name": item.get("Name"),
                 "amount": item.get("Amount"),
-                "due_date": item.get("Due Date"),
-                "recurrence": item.get("Recurrence"),
-                "category": item.get("Category"),
-                "importance": item.get("Importance"),
-                "reserve_start": item.get("Reserve Start"),
-                "monthly_reserve": item.get("Monthly Reserve"),
-                "status": item.get("Status"),
-                "notes": item.get("Notes"),
-                "last_reviewed": item.get("Last Reviewed"),
+                "month": item.get("Month"),
             }
         )
-    return {"obligations": obligations}
+    return {"future_expenses": future_expenses}
+
+
+@tool
+def create_future_expense(name: str, amount: float, month: str) -> dict[str, Any]:
+    """Create a planned future expense in Notion. `month` is an ISO date in the due month."""
+    props = _properties(
+        Name=("title", name),
+        Amount=("number", amount),
+        Month=("date", month),
+    )
+    return notion_create_database_page.invoke(
+        {"database_id": _database_id("future_expenses"), "properties": props}
+    )
 
 
 @tool
@@ -211,29 +180,36 @@ def get_future_purchases(min_budget: float | None = None) -> dict[str, Any]:
     )
     purchases = []
     for page in raw.get("results", []):
-        item = _page_summary(page, ["Name", "Budget", "Priority", "Reason", "Notes", "URL", "Tag"])
+        item = _page_summary(page, ["Name", "Budget", "Reason", "Actively Saving"])
         purchases.append(
             {
                 "id": item.get("id"),
                 "url": item.get("url"),
                 "name": item.get("Name"),
                 "budget": item.get("Budget"),
-                "estimated_cost": item.get("Budget"),
-                "priority": item.get("Priority"),
                 "reason": item.get("Reason"),
-                "notes": item.get("Notes"),
-                "product_url": item.get("URL"),
-                "tags": item.get("Tag") or [],
+                "actively_saving": bool(item.get("Actively Saving")),
             }
         )
     return {"future_purchases": purchases}
 
 
 @tool
-def get_financial_desires(status: str | None = None, min_priority: float | None = None) -> dict[str, Any]:
-    """Compatibility alias: return Future Purchases as financial desires."""
-    purchases = get_future_purchases.invoke({"min_budget": None})
-    return {"desires": purchases.get("future_purchases", [])}
+def create_future_purchase(
+    name: str,
+    budget: float | None = None,
+    reason: str = "",
+    actively_saving: bool = False,
+) -> dict[str, Any]:
+    """Create a Future Purchase row in Notion."""
+    props = _properties(
+        Name=("title", name),
+        Budget=("number", budget),
+        Reason=("rich_text", reason),
+    )
+    if actively_saving:
+        props["Actively Saving"] = {"type": "checkbox", "content": True}
+    return notion_create_database_page.invoke({"database_id": _database_id("future_purchases"), "properties": props})
 
 
 @tool
@@ -247,185 +223,55 @@ def get_future_vacations() -> dict[str, Any]:
     )
     vacations = []
     for page in raw.get("results", []):
-        item = _page_summary(page, ["Country", "Budget", "Travel Dates", "Activities"])
+        item = _page_summary(page, ["Country", "Budget", "Recommended Time", "Actively Saving"])
         vacations.append(
             {
                 "id": item.get("id"),
                 "url": item.get("url"),
                 "country": item.get("Country"),
                 "budget": item.get("Budget"),
-                "travel_dates": item.get("Travel Dates"),
-                "activities": item.get("Activities") or [],
+                "recommended_time": item.get("Recommended Time"),
+                "actively_saving": bool(item.get("Actively Saving")),
             }
         )
     return {"future_vacations": vacations}
 
 
 @tool
-def create_financial_desire(
-    name: str,
-    estimated_cost: float | None = None,
-    category: str = "Other",
-    desire_strength: int = 5,
-    necessity: str = "Nice to Have",
-    time_horizon: str = "Someday",
-    target_date: str | None = None,
-    reason: str = "",
-    advisor_notes: str = "",
-    priority_score: float | None = None,
-    status: str = "Captured",
-) -> dict[str, Any]:
-    """Compatibility alias: create a Future Purchase row."""
-    return create_future_purchase.invoke(
-        {
-            "name": name,
-            "budget": estimated_cost,
-            "reason": reason,
-            "notes": advisor_notes,
-            "tags": [category] if category else [],
-            "high_priority": bool(priority_score and priority_score >= 20),
-        }
-    )
-
-
-@tool
-def create_future_purchase(
-    name: str,
-    budget: float | None = None,
-    reason: str = "",
-    notes: str = "",
-    url: str = "",
-    tags: list[str] | None = None,
-    high_priority: bool = False,
-) -> dict[str, Any]:
-    """Create a Future Purchase row in Notion."""
-    props = _properties(
-        Name=("title", name),
-        Budget=("number", budget),
-        Reason=("rich_text", reason),
-        Notes=("rich_text", notes),
-        URL=("url", url),
-        Tag=("multi_select", tags or []),
-    )
-    if high_priority:
-        props["Priority"] = {"type": "select", "content": "🚩"}
-    return notion_create_database_page.invoke({"database_id": _database_id("future_purchases"), "properties": props})
-
-
-@tool
 def create_future_vacation(
     country: str,
     budget: float | None = None,
-    travel_start: str | None = None,
-    travel_end: str | None = None,
-    activities: list[str] | None = None,
+    recommended_time: str = "",
+    actively_saving: bool = False,
 ) -> dict[str, Any]:
     """Create a Future Vacation row in Notion."""
-    travel_dates = None
-    if travel_start:
-        travel_dates = {"start": travel_start, "end": travel_end}
     props = _properties(
         Country=("title", country),
         Budget=("number", budget),
-        **{
-            "Travel Dates": ("date", travel_dates),
-            "Activities": ("multi_select", activities or []),
-        },
+        **{"Recommended Time": ("rich_text", recommended_time)},
     )
+    if actively_saving:
+        props["Actively Saving"] = {"type": "checkbox", "content": True}
     return notion_create_database_page.invoke({"database_id": _database_id("future_vacations"), "properties": props})
 
 
 @tool
-def update_financial_desire_status(desire_id: str, status: str, notes: str | None = None) -> dict[str, Any]:
-    """Return an update plan for a financial desire status change."""
-    return {
-        "requires_confirmation": True,
-        "action": "update_financial_desire_status",
-        "desire_id": desire_id,
-        "status": status,
-        "notes": notes,
-    }
+def set_actively_saving(database: str, page_id: str, actively_saving: bool) -> dict[str, Any]:
+    """Toggle the Actively Saving checkbox on a Future Purchase or Future Vacation page.
 
-
-@tool
-def create_future_obligation(
-    name: str,
-    amount: float,
-    due_date: str,
-    recurrence: str = "One Time",
-    category: str = "Other",
-    importance: str = "Mandatory",
-    reserve_start: str | None = None,
-    monthly_reserve: float | None = None,
-    notes: str = "",
-) -> dict[str, Any]:
-    """Create a future financial obligation in Notion."""
-    today = date.today().isoformat()
-    props = _properties(
-        Name=("title", name),
-        Amount=("number", amount),
-        **{
-            "Due Date": ("date", due_date),
-            "Recurrence": ("select", recurrence),
-            "Category": ("select", category),
-            "Importance": ("select", importance),
-            "Reserve Start": ("date", reserve_start),
-            "Monthly Reserve": ("number", monthly_reserve),
-            "Status": ("select", "Active"),
-            "Notes": ("rich_text", notes),
-            "Last Reviewed": ("date", today),
-        },
-    )
-    return notion_create_database_page.invoke(
-        {"database_id": _database_id("future_financial_obligations"), "properties": props}
-    )
-
-
-@tool
-def update_future_obligation(obligation_id: str, updates: dict[str, Any]) -> dict[str, Any]:
-    """Return an update plan for a future obligation change."""
-    return {
-        "requires_confirmation": True,
-        "action": "update_future_obligation",
-        "obligation_id": obligation_id,
-        "updates": updates,
-    }
-
-
-@tool
-def create_balance_snapshot(
-    account: str,
-    balance: float,
-    currency: str = "ILS",
-    date: str = "",
-    notes: str = "",
-) -> dict[str, Any]:
-    """Compatibility alias: update locally remembered bank balance."""
-    return update_bank_account_balance.invoke({"balance": balance, "currency": currency, "notes": notes})
-
-
-@tool
-def log_financial_recommendation(
-    name: str,
-    recommendation_type: str,
-    recommendation: str,
-    numbers_used: str = "",
-    status: str = "Suggested",
-) -> dict[str, Any]:
-    """Log a financial recommendation in Notion if the optional database is configured."""
-    props = _properties(
-        Name=("title", name),
-        Date=("date", datetime.now().date().isoformat()),
-        Type=("select", recommendation_type),
-        Recommendation=("rich_text", recommendation),
-        **{
-            "Numbers Used": ("rich_text", numbers_used),
-            "Status": ("select", status),
-        },
-    )
-    return notion_create_database_page.invoke(
-        {"database_id": _database_id("financial_recommendations"), "properties": props}
-    )
+    `database` must be 'future_purchases' or 'future_vacations'.
+    """
+    if database not in {"future_purchases", "future_vacations"}:
+        raise ValueError("`database` must be 'future_purchases' or 'future_vacations'.")
+    client = _build_notion_client()
+    try:
+        page = client.pages.update(
+            page_id=page_id,
+            properties={"Actively Saving": {"checkbox": bool(actively_saving)}},
+        )
+    except APIResponseError as exc:
+        raise RuntimeError(f"Failed to update Actively Saving: {exc}") from exc
+    return {"ok": True, "page_id": page.get("id"), "url": page.get("url"), "actively_saving": bool(actively_saving)}
 
 
 @tool

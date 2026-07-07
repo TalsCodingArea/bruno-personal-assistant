@@ -9,7 +9,7 @@ from typing import Any
 from tools.financial_advisor.models import (
     AffordabilityResult,
     EmergencyFundResult,
-    FutureObligationReserve,
+    FutureExpenseReserve,
 )
 
 
@@ -49,7 +49,7 @@ def calculate_monthly_cashflow(
     income: list[dict[str, Any]] | dict[str, Any],
     expenses: list[dict[str, Any]] | dict[str, Any],
     budget: dict[str, Any] | list[dict[str, Any]] | None,
-    obligations: list[dict[str, Any]] | None,
+    future_expenses: list[dict[str, Any]] | None,
 ) -> dict[str, Any]:
     income_total = _amount(income.get("total")) if isinstance(income, dict) else _sum_amounts(income, "Amount", "amount")
     expense_total = (
@@ -64,8 +64,8 @@ def calculate_monthly_cashflow(
     else:
         budget_total = _sum_amounts(budget or [], "Budget", "budget", "amount")
     reserves = sum(
-        calculate_future_obligation_reserve(obligation, date.today()).monthly_reserve
-        for obligation in obligations or []
+        calculate_future_expense_reserve(future_expense, date.today()).monthly_reserve
+        for future_expense in future_expenses or []
     )
     return {
         "income": round(income_total, 2),
@@ -115,12 +115,17 @@ def _calendar_months_inclusive(start: date, end: date) -> int:
     return max(1, (end.year - start.year) * 12 + end.month - start.month + 1)
 
 
-def calculate_future_obligation_reserve(obligation: dict[str, Any], today: date) -> FutureObligationReserve:
-    amount = _amount(obligation.get("amount") or obligation.get("Amount"))
-    due = _parse_date(obligation.get("due_date") or obligation.get("Due Date"))
+def calculate_future_expense_reserve(future_expense: dict[str, Any], today: date) -> FutureExpenseReserve:
+    amount = _amount(future_expense.get("amount") or future_expense.get("Amount"))
+    due = _parse_date(
+        future_expense.get("month")
+        or future_expense.get("due_date")
+        or future_expense.get("Month")
+        or future_expense.get("Due Date")
+    )
     months_remaining = _calendar_months_inclusive(today, due) if due else 1
     monthly_reserve = amount / months_remaining if months_remaining else amount
-    return FutureObligationReserve(
+    return FutureExpenseReserve(
         amount=round(amount, 2),
         months_remaining=months_remaining,
         monthly_reserve=round(monthly_reserve, 2),
@@ -159,9 +164,8 @@ def _latest_balance(context: dict[str, Any]) -> float | None:
 def _required_reserves(context: dict[str, Any], today: date) -> float:
     return round(
         sum(
-            calculate_future_obligation_reserve(obligation, today).monthly_reserve
-            for obligation in context.get("future_obligations", []) or []
-            if str(obligation.get("status") or obligation.get("Status") or "Active").lower() == "active"
+            calculate_future_expense_reserve(future_expense, today).monthly_reserve
+            for future_expense in context.get("future_expenses", []) or []
         ),
         2,
     )
@@ -222,7 +226,7 @@ def evaluate_desire_affordability(desire: dict[str, Any], context: dict[str, Any
     if cost > month_remaining_budget:
         reasons.append("Purchase does not fit inside the remaining budget for this month.")
     if reserves > 0:
-        reasons.append(f"Upcoming obligations require {reserves:,.0f} ILS of monthly reserves.")
+        reasons.append(f"Upcoming future expenses require {reserves:,.0f} ILS of monthly reserves.")
 
     return AffordabilityResult(
         level=level,
@@ -262,10 +266,10 @@ def score_desire(desire: dict[str, Any], affordability_result: AffordabilityResu
 def recommend_budget_adjustments(
     expense_patterns: dict[str, Any],
     current_budget: dict[str, Any],
-    obligations: list[dict[str, Any]],
+    future_expenses: list[dict[str, Any]],
 ) -> dict[str, Any]:
     recommendations = []
-    reserves = sum(_amount(item.get("monthly_reserve") or item.get("Monthly Reserve")) for item in obligations or [])
+    reserves = sum(_amount(item.get("monthly_reserve") or item.get("Monthly Reserve")) for item in future_expenses or [])
     for category, actual in (expense_patterns or {}).items():
         budgeted = _amount((current_budget or {}).get(category))
         actual_amount = _amount(actual)
@@ -279,7 +283,7 @@ def recommend_budget_adjustments(
                     "reason": "Observed spending is more than 20% above budget.",
                 }
             )
-    return {"required_obligation_reserves": round(reserves, 2), "recommendations": recommendations}
+    return {"required_future_expense_reserves": round(reserves, 2), "recommendations": recommendations}
 
 
 def project_month_end_spending(

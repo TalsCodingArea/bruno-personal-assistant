@@ -14,7 +14,7 @@ from agent.contexts.financial_advisor_context import FINANCIAL_ADVISOR_CONTEXT
 from tools.financial_advisor.engine import (
     calculate_available_surplus,
     calculate_emergency_fund_target,
-    calculate_future_obligation_reserve,
+    calculate_future_expense_reserve,
     evaluate_desire_affordability,
     evaluate_emergency_fund,
     project_month_end_spending,
@@ -33,8 +33,8 @@ SubIntent = Literal[
     "future_vacation_lookup",
     "saving_plan",
     "monthly_budget_advice",
-    "future_obligation_capture",
-    "future_obligation_review",
+    "future_expense_capture",
+    "future_expense_review",
     "balance_update",
     "income_review",
     "emergency_fund_check",
@@ -52,8 +52,7 @@ ContextNeed = Literal[
     "balance",
     "future_purchases",
     "future_vacations",
-    "obligations",
-    "desires",
+    "future_expenses",
 ]
 
 
@@ -78,7 +77,7 @@ WriteExecutor = Callable[[dict[str, Any]], dict[str, Any]]
 _DESIRE_RE = re.compile(r"\b(i want|want to buy|thinking of buying|dreaming of|wish i had|can i afford|should i buy|smart to buy)\b", re.I)
 _CAPTURE_DESIRE_RE = re.compile(r"\b(save|remember|capture|log)\b.*\b(desire|want|purchase|buy)\b", re.I)
 _BALANCE_RE = re.compile(r"\b(balance|bank account|checking account|cash available)\b", re.I)
-_OBLIGATION_RE = re.compile(r"\b(yearly|annual|renewal|license|tuition|insurance|subscription|due in|every\s+\w+)\b", re.I)
+_FUTURE_EXPENSE_RE = re.compile(r"\b(yearly|annual|renewal|license|tuition|insurance|subscription|due in|every\s+\w+)\b", re.I)
 _PAYMENT_RE = re.compile(r"\b(payment|pay|bill|cost)\b", re.I)
 _EMERGENCY_RE = re.compile(r"\b(emergency fund|months of budget|safety net)\b", re.I)
 _INCOME_RE = re.compile(r"\b(income|salary|paycheck|paid this month)\b", re.I)
@@ -130,10 +129,10 @@ def classify_financial_sub_intent(text: str) -> SubIntent:
         return "balance_update"
     if _EMERGENCY_RE.search(stripped):
         return "emergency_fund_check"
-    if _OBLIGATION_RE.search(stripped) or (_PAYMENT_RE.search(stripped) and _month_name_in_text(stripped)):
+    if _FUTURE_EXPENSE_RE.search(stripped) or (_PAYMENT_RE.search(stripped) and _month_name_in_text(stripped)):
         if _NUMBER_RE.search(stripped):
-            return "future_obligation_capture"
-        return "future_obligation_review"
+            return "future_expense_capture"
+        return "future_expense_review"
     if _FUTURE_PURCHASES_RE.search(stripped):
         return "future_purchase_lookup"
     if _FUTURE_VACATIONS_RE.search(stripped):
@@ -213,12 +212,12 @@ def context_needs_for_sub_intent(sub_intent: SubIntent) -> list[ContextNeed]:
         needs.add("balance")
     if sub_intent in {
         "desire_affordability",
-        "future_obligation_capture",
-        "future_obligation_review",
+        "future_expense_capture",
+        "future_expense_review",
         "savings_or_investing_readiness",
         "general_finance_question",
     }:
-        needs.add("obligations")
+        needs.add("future_expenses")
     if sub_intent in {
         "desire_capture",
         "desire_affordability",
@@ -229,8 +228,6 @@ def context_needs_for_sub_intent(sub_intent: SubIntent) -> list[ContextNeed]:
         needs.add("future_purchases")
     if sub_intent in {"future_vacation_lookup", "saving_plan", "general_finance_question"}:
         needs.add("future_vacations")
-    if sub_intent in {"desire_capture", "desire_affordability"}:
-        needs.add("desires")
     return sorted(needs)
 
 
@@ -266,31 +263,26 @@ def _extract_rule(text: str) -> dict[str, Any]:
     return {"rule": text.strip(), "emergency_fund_months": float(months.group(1)) if months else None}
 
 
-def _extract_obligation(text: str, today: date) -> dict[str, Any]:
+def _extract_future_expense(text: str, today: date) -> dict[str, Any]:
     amount = _first_amount(text)
     month_match = re.search(
         r"\b(january|february|march|april|may|june|july|august|september|october|november|december)\b",
         text or "",
         re.I,
     )
-    due_date = None
+    month = None
     if month_match:
         month_names = [m.lower() for m in __import__("calendar").month_name]
-        month = month_names.index(month_match.group(1).lower())
-        year = today.year if month >= today.month else today.year + 1
-        due_date = date(year, month, 1).isoformat()
+        month_number = month_names.index(month_match.group(1).lower())
+        year = today.year if month_number >= today.month else today.year + 1
+        month = date(year, month_number, 1).isoformat()
     name = re.sub(_NUMBER_RE, "", text or "")
     name = re.sub(r"\b(every|yearly|annual|i need to pay|need to pay|for|in|due|ils|nis)\b", " ", name, flags=re.I)
-    name = " ".join(name.split()).strip(" .?") or "Future obligation"
-    recurrence = "Yearly" if re.search(r"\b(every|yearly|annual)\b", text or "", re.I) else "One Time"
+    name = " ".join(name.split()).strip(" .?") or "Future expense"
     return {
         "name": name[:80],
         "amount": amount,
-        "due_date": due_date,
-        "recurrence": recurrence,
-        "category": "Other",
-        "importance": "Mandatory",
-        "notes": text,
+        "month": month,
     }
 
 
@@ -301,8 +293,8 @@ def _fallback_router_decision(text: str, today: date) -> dict[str, Any]:
         extracted["desire"] = _extract_desire(text)
     elif sub_intent == "balance_update":
         extracted["balance_snapshot"] = _extract_balance(text)
-    elif sub_intent in {"future_obligation_capture", "future_obligation_review"}:
-        extracted["obligation"] = _extract_obligation(text, today)
+    elif sub_intent in {"future_expense_capture", "future_expense_review"}:
+        extracted["future_expense"] = _extract_future_expense(text, today)
     elif sub_intent == "advisor_rule_update":
         extracted["rule"] = _extract_rule(text)
     return {
@@ -342,11 +334,11 @@ async def _llm_router_decision(llm: Any, text: str, today: date, config: Runnabl
                 "- route: one of ['deterministic_evaluation', 'contextual_answer', 'clarify']\n"
                 "- context_needs: array using only "
                 "['rules', 'budget', 'expenses', 'income', 'balance', "
-                "'future_purchases', 'future_vacations', 'obligations', 'desires']\n"
-                "- extracted: object. Use keys desire, balance_snapshot, obligation, rule when relevant.\n\n"
+                "'future_purchases', 'future_vacations', 'future_expenses']\n"
+                "- extracted: object. Use keys desire, balance_snapshot, future_expense, rule when relevant.\n\n"
                 "Use contextual_answer for broad finance questions that need context but not a specific calculation. "
                 "Use deterministic_evaluation for affordability, emergency fund, spending summaries, budget advice, "
-                "balance updates, future purchases, future vacations, saving plans, future obligations, income review, "
+                "balance updates, future purchases, future vacations, saving plans, future expenses, income review, "
                 "and savings/investing readiness. "
                 "Use clarify only when the message is too vague to determine any finance task."
             )
@@ -384,8 +376,7 @@ async def _llm_router_decision(llm: Any, text: str, today: date, config: Runnabl
 def _default_provider(sub_intent: SubIntent, period: dict[str, str], extracted: dict[str, Any]) -> dict[str, Any]:
     from tools.financial_advisor.notion_tools import (
         get_expense_summary,
-        get_financial_desires,
-        get_future_obligations,
+        get_future_expenses,
         get_future_purchases,
         get_future_vacations,
         get_income_summary,
@@ -407,17 +398,15 @@ def _default_provider(sub_intent: SubIntent, period: dict[str, str], extracted: 
         context["income"] = get_income_summary.invoke({"start_date": period["start"], "end_date": period["end"]})
     if "balance" in needs:
         context.update(get_latest_account_balances.invoke({"account": None}))
-    if "obligations" in needs:
+    if "future_expenses" in needs:
         try:
-            context.update(get_future_obligations.invoke({"status": "Active"}))
+            context.update(get_future_expenses.invoke({}))
         except Exception:
-            context["obligations"] = []
+            context["future_expenses"] = []
     if "future_purchases" in needs:
         context.update(get_future_purchases.invoke({"min_budget": None}))
     if "future_vacations" in needs:
         context.update(get_future_vacations.invoke({}))
-    if "desires" in needs:
-        context.update(get_financial_desires.invoke({"status": None, "min_priority": None}))
     return context
 
 
@@ -437,10 +426,8 @@ def _load_monthly_budget_context(month: str) -> dict[str, Any]:
 
 def _default_write_executor(write_plan: dict[str, Any]) -> dict[str, Any]:
     from tools.financial_advisor.notion_tools import (
-        create_balance_snapshot,
-        create_financial_desire,
+        create_future_expense,
         create_future_purchase,
-        create_future_obligation,
         update_financial_advisor_rule,
     )
     from tools.financial_advisor.memory import update_bank_account_balance
@@ -449,14 +436,10 @@ def _default_write_executor(write_plan: dict[str, Any]) -> dict[str, Any]:
     payload = write_plan.get("payload") or {}
     if not action or write_plan.get("requires_confirmation"):
         return {"ok": False, "skipped": True, "reason": "No low-risk write to execute."}
-    if action == "create_financial_desire":
-        return create_financial_desire.invoke(payload)
     if action == "create_future_purchase":
         return create_future_purchase.invoke(payload)
-    if action == "create_future_obligation":
-        return create_future_obligation.invoke(payload)
-    if action == "create_balance_snapshot":
-        return create_balance_snapshot.invoke(payload)
+    if action == "create_future_expense":
+        return create_future_expense.invoke(payload)
     if action == "update_bank_account_balance":
         return update_bank_account_balance.invoke(payload)
     if action == "update_financial_advisor_rule":
@@ -523,13 +506,13 @@ def create_financial_advisor_graph(
             result = evaluate_desire_affordability(desire, {**context, "today": today.isoformat()})
             evaluation["affordability"] = result.to_dict()
             evaluation["priority_score"] = score_desire(desire, result)
-        elif sub_intent in {"future_obligation_capture", "future_obligation_review"}:
-            obligation = extracted.get("obligation", {})
-            if obligation.get("amount") and obligation.get("due_date"):
-                evaluation["reserve"] = calculate_future_obligation_reserve(obligation, today).to_dict()
+        elif sub_intent in {"future_expense_capture", "future_expense_review"}:
+            future_expense = extracted.get("future_expense", {})
+            if future_expense.get("amount") and future_expense.get("month"):
+                evaluation["reserve"] = calculate_future_expense_reserve(future_expense, today).to_dict()
             else:
                 evaluation["missing"] = [
-                    key for key in ("amount", "due_date") if not obligation.get(key)
+                    key for key in ("amount", "month") if not future_expense.get(key)
                 ]
         elif sub_intent == "balance_update":
             snapshot = extracted.get("balance_snapshot", {})
@@ -553,7 +536,10 @@ def create_financial_advisor_graph(
             monthly_budget = float((context.get("budget") or {}).get("total") or 0)
             balance = _latest_balance_value(context)
             target = calculate_emergency_fund_target(monthly_budget, 3)
-            reserves = sum(float(item.get("monthly_reserve") or 0) for item in context.get("obligations", []))
+            reserves = sum(
+                calculate_future_expense_reserve(item, today).monthly_reserve
+                for item in context.get("future_expenses", [])
+            )
             evaluation["surplus"] = calculate_available_surplus(balance or 0, target, reserves)
             evaluation["emergency_target"] = target
             evaluation["latest_balance"] = balance
@@ -606,27 +592,33 @@ def create_financial_advisor_graph(
 
         if sub_intent in {"desire_affordability", "desire_capture"}:
             desire = dict(extracted.get("desire", {}))
-            desire["priority_score"] = evaluation.get("priority_score")
             affordability = evaluation.get("affordability", {})
-            desire["advisor_notes"] = compact_reasons(affordability.get("reasons", []))
+            advisor_notes = compact_reasons(affordability.get("reasons", []))
+            reason = desire.get("reason", "")
+            if advisor_notes:
+                reason = f"{reason}\nAdvisor: {advisor_notes}" if reason else advisor_notes
             if sub_intent == "desire_capture" or affordability.get("level") != "affordable_now":
                 write_plan = {
                     "action": "create_future_purchase",
                     "payload": {
                         "name": desire.get("name") or "Future purchase",
                         "budget": desire.get("estimated_cost"),
-                        "reason": desire.get("reason", ""),
-                        "notes": desire.get("advisor_notes", ""),
-                        "tags": [desire.get("category", "Other")],
-                        "high_priority": bool((evaluation.get("priority_score") or 0) >= 20),
+                        "reason": reason,
                     },
                     "requires_confirmation": False,
                 }
-        elif sub_intent == "future_obligation_capture":
-            obligation = dict(extracted.get("obligation", {}))
+        elif sub_intent == "future_expense_capture":
+            future_expense = dict(extracted.get("future_expense", {}))
             if evaluation.get("reserve"):
-                obligation["monthly_reserve"] = evaluation["reserve"]["monthly_reserve"]
-                write_plan = {"action": "create_future_obligation", "payload": obligation, "requires_confirmation": False}
+                write_plan = {
+                    "action": "create_future_expense",
+                    "payload": {
+                        "name": future_expense.get("name") or "Future expense",
+                        "amount": future_expense.get("amount"),
+                        "month": future_expense.get("month"),
+                    },
+                    "requires_confirmation": False,
+                }
         elif sub_intent == "balance_update":
             snapshot = extracted.get("balance_snapshot", {})
             if snapshot.get("balance") is not None:
@@ -722,9 +714,9 @@ def _fallback_response(state: FinancialAdvisorState) -> str:
             f"Safe surplus after reserves: {ils(affordability.get('available_after_emergency'))}.\n"
             f"{compact_reasons(affordability.get('reasons', []))}{saved}"
         )
-    if sub_intent == "future_obligation_capture":
+    if sub_intent == "future_expense_capture":
         if evaluation.get("missing"):
-            return f"I can track this obligation, but I still need: {', '.join(evaluation['missing'])}."
+            return f"I can track this future expense, but I still need: {', '.join(evaluation['missing'])}."
         reserve = evaluation.get("reserve", {})
         saved = " I saved it to Notion." if executed.get("ok") else ""
         return (
@@ -789,9 +781,9 @@ def _fallback_response(state: FinancialAdvisorState) -> str:
             return "You do not have any Future Vacations saved right now."
         lines = ["Current Future Vacations:"]
         for item in vacations[:10]:
-            dates = item.get("travel_dates")
-            date_text = f" ({dates})" if dates else ""
-            lines.append(f"- {item.get('country')}: {ils(item.get('budget'))}{date_text}")
+            recommended = item.get("recommended_time")
+            time_text = f" (best time: {recommended})" if recommended else ""
+            lines.append(f"- {item.get('country')}: {ils(item.get('budget'))}{time_text}")
         return "\n".join(lines)
     if sub_intent in {"expense_summary", "expense_drilldown", "transaction_lookup", "monthly_budget_advice"}:
         projection = evaluation.get("projection", {})

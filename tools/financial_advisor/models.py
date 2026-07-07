@@ -25,7 +25,7 @@ class EmergencyFundResult:
 
 
 @dataclass(frozen=True)
-class FutureObligationReserve:
+class FutureExpenseReserve:
     amount: float
     months_remaining: int
     monthly_reserve: float

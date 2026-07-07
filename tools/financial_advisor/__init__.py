@@ -1,7 +1,7 @@
 from tools.financial_advisor.engine import (
     calculate_available_surplus,
     calculate_emergency_fund_target,
-    calculate_future_obligation_reserve,
+    calculate_future_expense_reserve,
     calculate_monthly_cashflow,
     detect_spending_pattern_changes,
     evaluate_desire_affordability,
@@ -14,17 +14,17 @@ from tools.financial_advisor.models import (
     AffordabilityLevel,
     AffordabilityResult,
     EmergencyFundResult,
-    FutureObligationReserve,
+    FutureExpenseReserve,
 )
 
 __all__ = [
     "AffordabilityLevel",
     "AffordabilityResult",
     "EmergencyFundResult",
-    "FutureObligationReserve",
+    "FutureExpenseReserve",
     "calculate_available_surplus",
     "calculate_emergency_fund_target",
-    "calculate_future_obligation_reserve",
+    "calculate_future_expense_reserve",
     "calculate_monthly_cashflow",
     "detect_spending_pattern_changes",
     "evaluate_desire_affordability",
