@@ -390,31 +390,15 @@ def _apply_month_to_habits(habits: dict, data: dict, month_label: str) -> dict:
 
 def review_budget():
     """
-    Fetch the current month's Notion budget, compare to actual expenses so far,
-    and return a summary of deviations. Does NOT modify anything — read-only snapshot.
-    Use this to get a quick budget health check from the automations channel.
+    Compare the current month's Budget rows to actual spending so far.
+    Does NOT modify anything — read-only snapshot for the automations channel.
     """
-    from tools.budget_tools import fetch_current_month_budget
-    from tools.notion_tools import get_expenses_between_dates, get_income_between_dates
-    from datetime import date
+    from tools.monthly_budget.agent_tools import review_monthly_budget_status
+    from tools.notion_tools import get_income_between_dates
 
     today = date.today()
     start = today.replace(day=1).strftime("%Y-%m-%d")
     end = today.strftime("%Y-%m-%d")
-
-    try:
-        budget_data = fetch_current_month_budget()
-    except (ValueError, RuntimeError) as exc:
-        return f"❌ Could not load budget: {exc}"
-
-    budget = budget_data["categories"]
-    month = budget_data["month"]
-
-    try:
-        expense_result = get_expenses_between_dates.invoke({"start_date": start, "end_date": end})
-        actual = expense_result.get("by_category", {})
-    except Exception:
-        actual = {}
 
     try:
         income_rows = get_income_between_dates.invoke({"start_date": start, "end_date": end})
@@ -422,29 +406,12 @@ def review_budget():
     except Exception:
         income = 0.0
 
-    total_budget = sum(budget.values())
-    lines = [f"📊 Budget Snapshot — {month}\n",
-             f"💰 Income: ₪{income:,.0f}  |  Budgeted: ₪{total_budget:,.0f}  |  To save: ₪{income - total_budget:,.0f}\n"]
+    try:
+        status = review_monthly_budget_status.invoke({})
+    except Exception as exc:
+        return f"❌ Could not load budget status: {exc}"
 
-    deviations = []
-    for cat, b in sorted(budget.items(), key=lambda x: -x[1]):
-        a = actual.get(cat, 0.0)
-        if b == 0:
-            continue
-        pct = (a - b) / b * 100
-        flag = " 🔴" if pct > 20 else (" 🟡" if pct > 10 else "")
-        if flag or a > 0:
-            lines.append(f"  • {cat}: ₪{b:,.0f} budget / ₪{a:,.0f} actual{flag}")
-        if pct > 20:
-            deviations.append(cat)
-
-    if deviations:
-        lines.append(f"\n⚠️ Over budget by >20%: {', '.join(deviations)}")
-        lines.append("Ask the personal assistant to review monthly budget status and adjust the affected categories.")
-    else:
-        lines.append("\n✅ All categories within budget.")
-
-    return "\n".join(lines)
+    return f"💰 Income this month: ₪{income:,.0f}\n\n{status}"
 
 
 def backfill_spending_habits():

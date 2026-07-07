@@ -45,38 +45,6 @@ def _sum_amounts(items: list[dict[str, Any]], *keys: str) -> float:
     return round(total, 2)
 
 
-def calculate_monthly_cashflow(
-    income: list[dict[str, Any]] | dict[str, Any],
-    expenses: list[dict[str, Any]] | dict[str, Any],
-    budget: dict[str, Any] | list[dict[str, Any]] | None,
-    future_expenses: list[dict[str, Any]] | None,
-) -> dict[str, Any]:
-    income_total = _amount(income.get("total")) if isinstance(income, dict) else _sum_amounts(income, "Amount", "amount")
-    expense_total = (
-        _amount(expenses.get("total"))
-        if isinstance(expenses, dict)
-        else _sum_amounts(expenses, "Final", "Amount", "amount")
-    )
-    if isinstance(budget, dict):
-        budget_total = _amount(budget.get("total") or budget.get("monthly_budget"))
-        if not budget_total:
-            budget_total = _sum_amounts(list(budget.get("categories", {}).values()), "budget", "amount")
-    else:
-        budget_total = _sum_amounts(budget or [], "Budget", "budget", "amount")
-    reserves = sum(
-        calculate_future_expense_reserve(future_expense, date.today()).monthly_reserve
-        for future_expense in future_expenses or []
-    )
-    return {
-        "income": round(income_total, 2),
-        "expenses": round(expense_total, 2),
-        "budget": round(budget_total, 2),
-        "required_reserves": round(reserves, 2),
-        "net_cashflow": round(income_total - expense_total - reserves, 2),
-        "remaining_budget": round(budget_total - expense_total - reserves, 2),
-    }
-
-
 def calculate_emergency_fund_target(monthly_budget: float, months: float = 3) -> float:
     return round(max(0.0, _amount(monthly_budget)) * max(0.0, _amount(months, 3.0)), 2)
 
@@ -263,29 +231,6 @@ def score_desire(desire: dict[str, Any], affordability_result: AffordabilityResu
     return max(0, min(100, int(score)))
 
 
-def recommend_budget_adjustments(
-    expense_patterns: dict[str, Any],
-    current_budget: dict[str, Any],
-    future_expenses: list[dict[str, Any]],
-) -> dict[str, Any]:
-    recommendations = []
-    reserves = sum(_amount(item.get("monthly_reserve") or item.get("Monthly Reserve")) for item in future_expenses or [])
-    for category, actual in (expense_patterns or {}).items():
-        budgeted = _amount((current_budget or {}).get(category))
-        actual_amount = _amount(actual)
-        if budgeted and actual_amount > budgeted * 1.2:
-            recommendations.append(
-                {
-                    "category": category,
-                    "current_budget": round(budgeted, 2),
-                    "observed": round(actual_amount, 2),
-                    "suggested_budget": round(actual_amount * 1.05, 2),
-                    "reason": "Observed spending is more than 20% above budget.",
-                }
-            )
-    return {"required_future_expense_reserves": round(reserves, 2), "recommendations": recommendations}
-
-
 def project_month_end_spending(
     expenses_so_far: dict[str, Any] | list[dict[str, Any]],
     historical_patterns: dict[str, Any],
@@ -301,27 +246,3 @@ def project_month_end_spending(
         "projected_month_total": round(projection, 2),
         "basis": "max_of_current_pace_and_history" if historical_avg else "current_pace",
     }
-
-
-def detect_spending_pattern_changes(
-    current_period: dict[str, float],
-    historical_baseline: dict[str, float],
-) -> list[dict[str, Any]]:
-    changes = []
-    keys = set(current_period or {}) | set(historical_baseline or {})
-    for key in sorted(keys):
-        current = _amount((current_period or {}).get(key))
-        baseline = _amount((historical_baseline or {}).get(key))
-        if baseline <= 0:
-            continue
-        ratio = current / baseline
-        if ratio >= 1.2 or ratio <= 0.8:
-            changes.append(
-                {
-                    "category": key,
-                    "current": round(current, 2),
-                    "baseline": round(baseline, 2),
-                    "change_pct": round((ratio - 1) * 100, 1),
-                }
-            )
-    return changes

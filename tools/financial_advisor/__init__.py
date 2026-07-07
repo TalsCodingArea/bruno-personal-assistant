@@ -2,12 +2,9 @@ from tools.financial_advisor.engine import (
     calculate_available_surplus,
     calculate_emergency_fund_target,
     calculate_future_expense_reserve,
-    calculate_monthly_cashflow,
-    detect_spending_pattern_changes,
     evaluate_desire_affordability,
     evaluate_emergency_fund,
     project_month_end_spending,
-    recommend_budget_adjustments,
     score_desire,
 )
 from tools.financial_advisor.models import (
@@ -25,11 +22,8 @@ __all__ = [
     "calculate_available_surplus",
     "calculate_emergency_fund_target",
     "calculate_future_expense_reserve",
-    "calculate_monthly_cashflow",
-    "detect_spending_pattern_changes",
     "evaluate_desire_affordability",
     "evaluate_emergency_fund",
     "project_month_end_spending",
-    "recommend_budget_adjustments",
     "score_desire",
 ]
