@@ -1,14 +1,10 @@
-slack-bolt==1.24.0
-slack_sdk==3.36.0
 requests
 orjson==3.10.7
 notion-client==2.3.0
 openai
 python-dotenv==1.1.1
-ollama
 pymupdf==1.26.5
 langchain>=0.3.0
-telegram==0.0.1
 python-telegram-bot==22.5
 langchain-openai
 # Job application workflow dependencies

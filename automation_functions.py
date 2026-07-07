@@ -1,4 +1,3 @@
-from base_scripts import *
 from datetime import date, datetime, timedelta
 from dotenv import load_dotenv
 import os
@@ -6,11 +5,20 @@ import json
 import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
+
+from notion_client import Client
+from openai import OpenAI
+
+from tools.legacy_helpers import (
+    ask_openai,
+    get_notion_pages,
+    notion_response_simplifier,
+)
+
 load_dotenv()
 
 _BUDGET_DATA_DIR = Path(__file__).parent / "budget_data"
 
-GMAIL_SMTP_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 notion_client = Client(auth=os.environ["NOTION_API_KEY"])
 openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 

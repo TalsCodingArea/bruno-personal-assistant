@@ -4,16 +4,9 @@ from tools.notion_tools import (
     get_database_schema,
     get_expenses_between_dates,
     get_last_expenses,
-    get_movies_data_from_notion_database,
     get_spending_habits,
     get_financial_advisor_habits,
     update_financial_advisor_habit,
-)
-from tools.ideas_tools import create_idea_in_notion
-from tools.israeli_market_tools import (
-    get_exchange_rates,
-    get_tase_stock_quote,
-    get_tase_index,
 )
 from tools.monthly_budget.agent_tools import (
     apply_monthly_budget_plan,
@@ -60,7 +53,6 @@ def get_tools():
         get_database_schema,
         get_expenses_between_dates,
         get_last_expenses,
-        get_movies_data_from_notion_database,
         get_spending_habits,
         get_financial_advisor_habits,
         update_financial_advisor_habit,
@@ -93,10 +85,6 @@ def get_tools():
         update_emergency_fund_months,
         log_financial_recommendation,
         update_financial_advisor_rule,
-        create_idea_in_notion,
-        get_exchange_rates,
-        get_tase_stock_quote,
-        get_tase_index,
     ]
 
 

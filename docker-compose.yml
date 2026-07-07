@@ -10,19 +10,3 @@ services:
     restart: unless-stopped
     environment:
       PYTHONUNBUFFERED: "1"
-      SLACK_BOLT_LOG_LEVEL: "debug"
-
-  # Optional services; keep them but they aren't required for Socket Mode
-  redis:
-    image: redis:7
-    restart: unless-stopped
-
-  ollama:
-    image: ollama/ollama:latest
-    mem_limit: 6g
-    volumes: ["ollama:/root/.ollama"]
-    ports: ["11434:11434"]
-    restart: unless-stopped
-
-volumes:
-  ollama:

@@ -675,42 +675,6 @@ def get_last_expenses(n: int = 5) -> Dict[str, Any]:
     return expenses_data
 
 @tool
-def get_movies_data_from_notion_database() -> Dict[str, Any]:
-    """
-    Fetches movie data from a Notion database.
-    Use this tool to retrieve movie records for a given date range.
-    Returns:     A dictionary containing the raw Notion API response with movies data.
-    """
-    movies_database_id = os.getenv("MOVIES_DATABASE_ID")
-    if not _is_non_empty_string(movies_database_id):
-        raise ValueError("Missing MOVIES_DATABASE_ID environment variable.")
-    movies_data = notion_get_database_pages.invoke({"database_id": movies_database_id})
-    movies_data = _raw_notion_response_to_dict(["Title", "Genre", "Rating", "Mood", "Last Watched"], movies_data)
-    return movies_data
-
-
-@tool
-def update_movie_property(movie_page_id: str, properties: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Update properties of a movie page in Notion.
-    Use this tool to update movie records with new information.
-    Args:
-        movie_page_id: The ID of the Notion page representing the movie.
-        properties: A dictionary of properties to update.
-    Returns:     A dictionary containing the raw Notion API response with the updated page data.
-    """
-    notion_client = _build_notion_client()
-
-    try:
-        updated_page = notion_client.pages.update(page_id=movie_page_id, properties=properties)
-    except APIResponseError as exc:
-        raise RuntimeError(f"Failed to update Notion page: {exc}") from exc
-
-    return updated_page
-
-
-
-@tool
 def notion_get_database_pages(
     database_id: str,
     filter: Optional[Dict[str, Any]] = None,

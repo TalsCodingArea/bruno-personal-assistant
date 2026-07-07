@@ -25,11 +25,6 @@ _TOOL_STATUS: dict[str, str] = {
     "get_last_expenses": "🔍 Fetching recent expenses...",
     "get_finance_rules": "📋 Loading finance rules...",
     "get_database_schema": "📋 Loading database schema...",
-    "get_movies_data_from_notion_database": "🎬 Fetching movies...",
-    "create_idea_in_notion": "💡 Saving idea to Notion...",
-    "get_exchange_rates": "💱 Fetching exchange rates...",
-    "get_tase_stock_quote": "📈 Fetching stock quote...",
-    "get_tase_index": "📊 Fetching market index...",
     "web_search": "🌐 Searching the web...",
 }
 _DEFAULT_TOOL_STATUS = "⚙️ Working on it..."

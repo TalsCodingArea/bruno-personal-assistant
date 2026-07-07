@@ -14,10 +14,10 @@ automation_functions = importlib.import_module("automation_functions")
 
 
 class ExpenseAutomationTest(unittest.TestCase):
-    @patch.object(automation_functions, "date")
+    @patch.object(automation_functions, "datetime")
     @patch.object(automation_functions, "log_expense")
-    def test_auto_expense_tool_logs_uncategorized_expense_for_today(self, log_expense, date_mock) -> None:
-        date_mock.today.return_value.isoformat.return_value = "2026-06-27"
+    def test_auto_expense_tool_logs_uncategorized_expense_for_today(self, log_expense, datetime_mock) -> None:
+        datetime_mock.now.return_value.isoformat.return_value = "2026-06-27T10:30:00"
         log_expense.return_value = "logged"
 
         result = automation_functions.auto_expense_tool(description="Coffee", amount=12.5)
@@ -26,7 +26,7 @@ class ExpenseAutomationTest(unittest.TestCase):
         log_expense.assert_called_once_with(
             Description="Coffee",
             Amount=12.5,
-            Date="2026-06-27",
+            Date="2026-06-27T10:30:00",
             Category=["Uncategorized"],
         )
 
@@ -38,10 +38,10 @@ class ExpenseAutomationTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             automation_functions.auto_expense_tool(description="Coffee", amount="nope")
 
-    @patch.object(automation_functions, "date")
+    @patch.object(automation_functions, "datetime")
     @patch.object(automation_functions, "log_expense")
-    def test_auto_expense_tool_extracts_shekel_string_amount(self, log_expense, date_mock) -> None:
-        date_mock.today.return_value.isoformat.return_value = "2026-06-27"
+    def test_auto_expense_tool_extracts_shekel_string_amount(self, log_expense, datetime_mock) -> None:
+        datetime_mock.now.return_value.isoformat.return_value = "2026-06-27T10:30:00"
         log_expense.return_value = "logged"
 
         result = automation_functions.auto_expense_tool(description="Coffee", amount="₪75.00")
@@ -50,14 +50,14 @@ class ExpenseAutomationTest(unittest.TestCase):
         log_expense.assert_called_once_with(
             Description="Coffee",
             Amount=75.0,
-            Date="2026-06-27",
+            Date="2026-06-27T10:30:00",
             Category=["Uncategorized"],
         )
 
-    @patch.object(automation_functions, "date")
+    @patch.object(automation_functions, "datetime")
     @patch.object(automation_functions, "log_expense")
-    def test_auto_expense_tool_extracts_comma_formatted_shekel_amount(self, log_expense, date_mock) -> None:
-        date_mock.today.return_value.isoformat.return_value = "2026-06-27"
+    def test_auto_expense_tool_extracts_comma_formatted_shekel_amount(self, log_expense, datetime_mock) -> None:
+        datetime_mock.now.return_value.isoformat.return_value = "2026-06-27T10:30:00"
         log_expense.return_value = "logged"
 
         result = automation_functions.auto_expense_tool(description="Device", amount="₪1,234.56")
@@ -66,7 +66,7 @@ class ExpenseAutomationTest(unittest.TestCase):
         log_expense.assert_called_once_with(
             Description="Device",
             Amount=1234.56,
-            Date="2026-06-27",
+            Date="2026-06-27T10:30:00",
             Category=["Uncategorized"],
         )
 

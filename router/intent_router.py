@@ -65,7 +65,7 @@ INTENT_PROMPT = ChatPromptTemplate.from_messages([
         "system",
         (
             "Classify the user's message into ONE label: "
-            "'finance', 'movies', 'job_application', or 'general'. "
+            "'finance', 'job_application', or 'general'. "
             "Use 'job_application' when the message contains a job listing URL "
             "or asks to apply for / research a job position. "
             "Use 'finance' when the user wants to plan, set, or review their monthly budget "
@@ -80,7 +80,7 @@ INTENT_PROMPT = ChatPromptTemplate.from_messages([
 
 async def classify_intent(llm, text: str) -> str:
     """
-    Classify a user message into one of: finance, movies, job_application, general.
+    Classify a user message into one of: finance, job_application, general.
 
     Hardcoded regex runs first (zero LLM cost) for unambiguous patterns.
     Falls back to an LLM call for everything else.
@@ -113,7 +113,7 @@ async def classify_intent(llm, text: str) -> str:
     label = (resp.content or "").strip().lower()
     if label == "budget":
         return "finance"
-    if label not in {"finance", "movies", "job_application", "general"}:
+    if label not in {"finance", "job_application", "general"}:
         return "general"
     return label
 
