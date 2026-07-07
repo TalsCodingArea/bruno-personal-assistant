@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from typing import Any
 
-from agent.workflow import stream_agent_events
+from personal_assistant.agent.general.workflow import stream_agent_events
 
 
 class FakeAgent:

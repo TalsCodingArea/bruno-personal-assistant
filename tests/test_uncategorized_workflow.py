@@ -4,7 +4,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from agent.uncategorized_workflow import (
+from personal_assistant.agent.general.uncategorized_workflow import (
     async_start_uncategorized_review,
     create_uncategorized_review_graph,
     fetch_uncategorized_transactions,
@@ -39,8 +39,8 @@ class UncategorizedWorkflowTest(unittest.IsolatedAsyncioTestCase):
 
 class UncategorizedFetchTest(unittest.TestCase):
     @patch.dict(os.environ, {"EXPENSES_DATABASE_ID": "expenses-db"})
-    @patch("tools.notion_tools._raw_notion_response_to_dict")
-    @patch("tools.notion_tools.notion_get_database_pages")
+    @patch("personal_assistant.tools.notion_tools._raw_notion_response_to_dict")
+    @patch("personal_assistant.tools.notion_tools.notion_get_database_pages")
     def test_fetch_uncategorized_transactions_uses_uncategorized_and_tal_filter(
         self,
         notion_get_database_pages,

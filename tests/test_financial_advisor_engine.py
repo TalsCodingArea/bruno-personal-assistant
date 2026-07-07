@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import date
 
-from tools.financial_advisor.engine import (
+from personal_assistant.tools.financial_advisor.engine import (
     calculate_available_surplus,
     calculate_emergency_fund_target,
     calculate_future_expense_reserve,

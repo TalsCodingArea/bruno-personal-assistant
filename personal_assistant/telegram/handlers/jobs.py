@@ -17,8 +17,8 @@ async def handle_job_application(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
     """Run the job application pipeline and deliver artifacts via Telegram."""
-    from agent.llm import get_llm
-    from tools.job_tools import run_job_application_workflow
+    from personal_assistant.agent.general.llm import get_llm
+    from personal_assistant.tools.job_tools import run_job_application_workflow
 
     tmp_paths: List[Path] = []
     llm = get_llm()

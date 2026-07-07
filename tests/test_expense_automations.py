@@ -10,7 +10,7 @@ from unittest.mock import patch
 os.environ.setdefault("NOTION_API_KEY", "test-notion-key")
 os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
 
-automation_functions = importlib.import_module("automation_functions")
+automation_functions = importlib.import_module("personal_assistant.automations")
 
 
 class ExpenseAutomationTest(unittest.TestCase):

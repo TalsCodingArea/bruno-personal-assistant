@@ -5,7 +5,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage
 
-from agent.financial_advisor_graph import (
+from personal_assistant.agent.capabilities.financial_advisor.graph import (
     FinancialAdvisorRuntime,
     create_financial_advisor_graph,
 )

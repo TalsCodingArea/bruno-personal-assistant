@@ -18,13 +18,13 @@ logger = logging.getLogger("telegram-assistant")
 
 
 async def handle_receipt_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    from tools.notion_tools import (
+    from personal_assistant.tools.notion_tools import (
         attach_file_to_notion_file_upload,
         notion_create_database_page,
         notion_create_file_upload,
         notion_properties_from_receipt,
     )
-    from tools.receipt_tools import receipt_extract_summary_from_pdf
+    from personal_assistant.tools.receipt_tools import receipt_extract_summary_from_pdf
 
     message = update.message
     if "channel_post" in update._get_attrs():

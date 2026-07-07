@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from agent.builder import build_agent
-from agent.financial_advisor_graph import FinancialAdvisorRuntime, create_financial_advisor_graph
-from agent.llm import get_llm
-from agent.memory import MemoryStore
-from agent.uncategorized_workflow import create_uncategorized_review_graph
+from personal_assistant.agent.general.builder import build_agent
+from personal_assistant.agent.capabilities.financial_advisor.graph import FinancialAdvisorRuntime, create_financial_advisor_graph
+from personal_assistant.agent.general.llm import get_llm
+from personal_assistant.agent.general.memory import MemoryStore
+from personal_assistant.agent.general.uncategorized_workflow import create_uncategorized_review_graph
 
 llm = get_llm()
 memory = MemoryStore()
@@ -24,7 +24,7 @@ agents: Dict[str, Any] = {}
 def get_or_build_agent(chat_id: str):
     """Return a cached agent for chat_id, creating one with bound tools on first use."""
     if chat_id not in agents:
-        from tools.registry import get_workflow_tools
+        from personal_assistant.tools.registry import get_workflow_tools
 
         workflow_tools = get_workflow_tools(
             chat_id,

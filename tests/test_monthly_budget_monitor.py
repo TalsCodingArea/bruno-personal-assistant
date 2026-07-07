@@ -3,10 +3,10 @@ from __future__ import annotations
 import unittest
 from datetime import date
 
-from tools.monthly_budget.budget_forcaster import ForecastResult
-from tools.monthly_budget.budget_monitor import _append_logged_expense_if_missing, decide_budget_alert
-from tools.monthly_budget.models import Month
-from tools.monthly_budget.notion_writer import BudgetPage
+from personal_assistant.tools.monthly_budget.budget_forcaster import ForecastResult
+from personal_assistant.tools.monthly_budget.budget_monitor import _append_logged_expense_if_missing, decide_budget_alert
+from personal_assistant.tools.monthly_budget.models import Month
+from personal_assistant.tools.monthly_budget.notion_writer import BudgetPage
 
 
 class MonthlyBudgetMonitorTest(unittest.TestCase):

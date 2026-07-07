@@ -9,12 +9,12 @@ from telegram import Message
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from agent.workflow import AgentEvent, stream_agent_events
+from personal_assistant.agent.general.workflow import AgentEvent, stream_agent_events
 from personal_assistant import runtime
 from personal_assistant.telegram.formatting import markdown_v2_safe
 from personal_assistant.telegram.handlers.jobs import handle_job_application
 from personal_assistant.telegram.logging import safe_log
-from router.intent_router import classify_intent
+from personal_assistant.router import classify_intent
 
 logger = logging.getLogger("telegram-assistant")
 

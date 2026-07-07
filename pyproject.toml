@@ -1,0 +1,27 @@
+[project]
+name = "personal-assistant"
+version = "1.0.0"
+description = "LangGraph-powered personal assistant with a Telegram gateway"
+requires-python = ">=3.13"
+dependencies = [
+    "requests",
+    "orjson==3.10.7",
+    "notion-client==2.3.0",
+    "openai",
+    "python-dotenv==1.1.1",
+    "pymupdf==1.26.5",
+    "langchain>=0.3.0",
+    "python-telegram-bot==22.5",
+    "langchain-openai",
+    "langgraph>=0.2.0",
+    # Job application workflow
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.0.0",
+    "weasyprint>=62.0",
+    "Jinja2>=3.1.0",
+    "ddgs",
+    "playwright>=1.44.0",
+]
+
+[tool.setuptools]
+packages = ["personal_assistant"]

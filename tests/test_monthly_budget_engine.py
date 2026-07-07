@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import date
 
-from tools.monthly_budget import (
+from personal_assistant.tools.monthly_budget import (
     Month,
     calculate_budget_allocations,
     classify_expenses,

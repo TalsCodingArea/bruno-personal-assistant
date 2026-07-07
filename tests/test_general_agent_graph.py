@@ -6,8 +6,8 @@ from typing import Any
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.tools import tool
 
-from agent.builder import GeneralAgentRuntime, _build_graph
-from agent.memory import MemoryStore
+from personal_assistant.agent.general.builder import GeneralAgentRuntime, _build_graph
+from personal_assistant.agent.general.memory import MemoryStore
 
 
 class FakeToolCallingModel:

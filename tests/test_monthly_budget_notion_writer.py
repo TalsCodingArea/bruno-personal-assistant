@@ -3,8 +3,8 @@ from __future__ import annotations
 import unittest
 from datetime import date
 
-from tools.monthly_budget.models import Month
-from tools.monthly_budget.notion_writer import (
+from personal_assistant.tools.monthly_budget.models import Month
+from personal_assistant.tools.monthly_budget.notion_writer import (
     archive_budget_page,
     build_budget_page_properties,
     find_budget_page_by_name,

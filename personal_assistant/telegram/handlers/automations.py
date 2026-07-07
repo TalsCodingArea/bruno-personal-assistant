@@ -16,7 +16,7 @@ AUTOMATION_FUNCTIONS: Dict[str, Any] | None = None
 
 
 def _load_automation_functions() -> Dict[str, Any]:
-    import automation_functions as automation_module
+    from personal_assistant import automations as automation_module
 
     functions: Dict[str, Any] = {}
     for name in dir(automation_module):

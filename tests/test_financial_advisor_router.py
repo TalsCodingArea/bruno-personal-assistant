@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from router.intent_router import classify_intent
+from personal_assistant.router import classify_intent
 
 
 class NeverCalledLLM:
