@@ -32,9 +32,16 @@ A self-hosted AI-powered personal assistant running on a Raspberry Pi, built wit
 - Send a receipt PDF to the Telegram receipts channel
 - Auto-extracts and categorizes the data, uploads to Notion, and evaluates the spend
 
+### 📅 Time Slot Naming
+- Time blocks live in the Notion Time Slots DB; the page name is what the calendar shows at a glance
+- When a block's tasks change, a Notion automation sends `{"tool": "update_time_slot_name", "args": {"url": "<page url>"}}` to the automations channel
+- A LangGraph workflow fetches the block's Uni Tasks and their courses, learns the naming style from recent blocks, and renames the page only if the summary changed (e.g. `Numeric - Ex.4 Q1-Q4`)
+- Course short names (`Numeric Analysis` → `Numeric`) are learned from usage and persisted in `budget_data/time_slots/`
+
 ### ⚙️ Automations
 - Send JSON messages to the automations chat: `{"tool": "tool_name", "args": {}}`
 - `log_expense` — Create a Notion expense from property-name args such as `Description`, `Amount`, `Date`, `Category`, `Sub Category`, `Payment Method`, and `Type`
+- `update_time_slot_name` — Re-summarize a Time Slots page name from its current tasks (see above)
 - `morning_summary` — Daily performance recap based on your Notion day scores and workout streaks
 - `get_weekly_spending_summary` — Weekly finance overview
 - `evaluate_expense` — Inline budget check after each new expense
@@ -139,6 +146,7 @@ EXPENSES_DATABASE_ID=
 INCOME_DATABASE_ID=
 MOVIES_DATABASE_ID=
 JOBS_DATABASE_ID=
+TIME_SLOTS_DATABASE_ID=  # for time-slot naming examples (update_time_slot_name)
 # Notion — Automations
 DAY_RATING_DATABASE_ID=
 WORKOUTS_DATABASE_ID=

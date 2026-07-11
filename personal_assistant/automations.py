@@ -903,6 +903,26 @@ def log_expense(**properties):
     return message
 
 
+async def update_time_slot_name(url: str):
+    """
+    Re-summarize a Time Slots page name from its current tasks.
+
+    Trigger this from a Notion automation whenever a time block's tasks
+    change. The LangGraph workflow fetches the block's Uni Tasks and their
+    courses, learns the naming style from recent blocks, and renames the
+    page only if the summary actually changed.
+
+    Automation payload example:
+    {
+      "tool": "update_time_slot_name",
+      "args": {"url": "https://www.notion.so/My-Slot-1234567890abcdef1234567890abcdef"}
+    }
+    """
+    from personal_assistant.agent.capabilities.time_slots.graph import run_time_slot_rename
+
+    return await run_time_slot_rename(url)
+
+
 def _maybe_queue_expense_for_category_review(page, properties, description, amount) -> None:
     """Feed new uncategorized Tal expenses to the ML categorizer's review queue.
 
