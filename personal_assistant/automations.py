@@ -760,7 +760,7 @@ def _coerce_auto_expense_amount(amount: Any) -> float | None:
     return float(match.group(0).replace(",", ""))
 
 
-def auto_expense_tool(description: str, amount: float | str):
+def auto_expense_tool(description: str, amount: float | str, tag: str = "Tal 👨🏻"):
     """
     Log an uncategorized credit-card expense with today's date.
 
@@ -782,6 +782,7 @@ def auto_expense_tool(description: str, amount: float | str):
         Amount=amount_value,
         Date=datetime.now().isoformat(),
         Category=["Uncategorized"],
+        Tag=[tag],
     )
 
 
@@ -810,6 +811,7 @@ Rules:
 - In Hebrew CAL messages, the merchant often appears after the card suffix and starts with "ב"; omit that leading "ב".
 - Amount is in Israeli shekels when the text says "שח", "₪", "ILS", or similar.
 - Do not infer category or subcategory.
+- If there's a double quotes anywhere, change it to single quotes so that it wouldn't mess up the JSON format.
 
 SMS:
 {message_text}
@@ -833,7 +835,7 @@ SMS:
     return parsed
 
 
-def log_txt_expense(text: str):
+def log_txt_expense(text: str, tag: str = "Tal 👨🏻"):
     """
     Parse a credit-card SMS with an LLM and log it as an uncategorized expense.
 
@@ -848,7 +850,7 @@ def log_txt_expense(text: str):
     amount = _coerce_number("amount", parsed.get("amount"))
     if amount <= 0:
         raise ValueError("`amount` must be positive.")
-    return auto_expense_tool(description=description, amount=amount)
+    return auto_expense_tool(description=description, amount=amount, tag=tag)
 
 
 def log_expense(**properties):
