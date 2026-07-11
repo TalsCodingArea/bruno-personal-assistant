@@ -32,6 +32,11 @@ from personal_assistant.tools.financial_advisor.notion_tools import (
     set_actively_saving,
     update_financial_advisor_rule,
 )
+from personal_assistant.tools.expense_review_tools import (
+    dismiss_expense_review,
+    get_pending_expense_reviews,
+    resolve_expense_review,
+)
 from personal_assistant.tools.financial_advisor.memory import (
     get_current_bank_balance,
     get_financial_profile,
@@ -81,6 +86,9 @@ def get_tools():
         get_financial_recommendations,
         update_financial_recommendation_status,
         update_financial_advisor_rule,
+        get_pending_expense_reviews,
+        resolve_expense_review,
+        dismiss_expense_review,
     ]
 
 
@@ -101,3 +109,15 @@ def get_workflow_tools(
     if uncategorized_review_graph is not None:
         tools.append(make_uncategorized_review_tool(uncategorized_review_graph))
     return tools
+
+
+async def get_fallback_tools():
+    """Read-only MCP tools the agent should reach for only when a dedicated
+    tool above doesn't cover the request. See tools/mcp/notion_mcp.py.
+
+    Never raises -- a broken/unreachable MCP server just means an empty
+    fallback list, not a broken agent.
+    """
+    from personal_assistant.tools.mcp.notion_mcp import get_notion_mcp_tools
+
+    return await get_notion_mcp_tools()

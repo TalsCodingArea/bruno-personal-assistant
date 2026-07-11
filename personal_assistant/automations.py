@@ -1,5 +1,6 @@
 from datetime import date, datetime, timedelta
 from dotenv import load_dotenv
+import logging
 import os
 import json
 import re
@@ -16,6 +17,8 @@ from personal_assistant.tools.legacy_helpers import (
 )
 
 load_dotenv()
+
+logger = logging.getLogger("personal-assistant.automations")
 
 _BUDGET_DATA_DIR = Path(__file__).resolve().parents[1] / "budget_data"
 
@@ -895,4 +898,31 @@ def log_expense(**properties):
             message += f"\n\n{alert_text}"
     except Exception as exc:
         message += f"\n\n⚠️ Budget evaluation failed: {exc}"
+
+    _maybe_queue_expense_for_category_review(page, properties, description, amount)
     return message
+
+
+def _maybe_queue_expense_for_category_review(page, properties, description, amount) -> None:
+    """Feed new uncategorized Tal expenses to the ML categorizer's review queue.
+
+    Best-effort by design: classification must never break expense logging.
+    The queued suggestions are surfaced in the next morning's Telegram digest
+    and through the assistant's expense-review tools.
+    """
+    try:
+        categories = properties.get("Category") or []
+        tags = properties.get("Tag") or ["Tal 👨🏻"]  # matches the log_expense default
+        if categories != ["Uncategorized"] or "Tal 👨🏻" not in tags:
+            return
+
+        from personal_assistant.ml.expense_categorizer.service import classify_and_enqueue
+
+        classify_and_enqueue(
+            notion_page_id=page.get("id", ""),
+            description=description,
+            amount=float(amount),
+            date=str(properties.get("Date") or datetime.now().isoformat()),
+        )
+    except Exception:
+        logger.exception("Expense category review queueing failed for %r", description)

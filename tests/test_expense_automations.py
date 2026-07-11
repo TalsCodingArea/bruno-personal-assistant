@@ -28,6 +28,7 @@ class ExpenseAutomationTest(unittest.TestCase):
             Amount=12.5,
             Date="2026-06-27T10:30:00",
             Category=["Uncategorized"],
+            Tag=["Tal 👨🏻"],
         )
 
     def test_auto_expense_tool_rejects_invalid_values(self) -> None:
@@ -52,6 +53,7 @@ class ExpenseAutomationTest(unittest.TestCase):
             Amount=75.0,
             Date="2026-06-27T10:30:00",
             Category=["Uncategorized"],
+            Tag=["Tal 👨🏻"],
         )
 
     @patch.object(automation_functions, "datetime")
@@ -68,6 +70,7 @@ class ExpenseAutomationTest(unittest.TestCase):
             Amount=1234.56,
             Date="2026-06-27T10:30:00",
             Category=["Uncategorized"],
+            Tag=["Tal 👨🏻"],
         )
 
     @patch.object(automation_functions, "log_expense")
@@ -95,7 +98,7 @@ class ExpenseAutomationTest(unittest.TestCase):
         )
 
         self.assertEqual(result, "logged")
-        auto_expense_tool.assert_called_once_with(description="פיזיקל טכנולוגי", amount=400.0)
+        auto_expense_tool.assert_called_once_with(description="פיזיקל טכנולוגי", amount=400.0, tag="Tal 👨🏻")
 
     @patch.object(automation_functions.openai_client.chat.completions, "create")
     def test_log_txt_expense_rejects_malformed_llm_output(self, create) -> None:

@@ -28,3 +28,6 @@ data/
 
 # Notion config — contains database IDs and personal finance rules
 notion_config/
+
+# Claude Code local settings (machine-specific permissions)
+.claude/settings.local.json

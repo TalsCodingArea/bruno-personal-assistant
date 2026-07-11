@@ -5,7 +5,7 @@ openai
 python-dotenv==1.1.1
 pymupdf==1.26.5
 langchain>=0.3.0
-python-telegram-bot==22.5
+python-telegram-bot[job-queue]==22.5
 langchain-openai
 # Job application workflow dependencies
 beautifulsoup4>=4.12.0
@@ -16,3 +16,8 @@ ddgs
 playwright>=1.44.0
 # Budget workflow
 langgraph>=0.2.0
+# Notion MCP fallback (read-only escape hatch, see personal_assistant/tools/mcp)
+langchain-mcp-adapters>=0.1.0
+# Expense categorizer ML (see personal_assistant/ml/expense_categorizer)
+scikit-learn>=1.4.0
+joblib>=1.3.0

@@ -50,8 +50,27 @@ def fetch_uncategorized_transactions() -> List[Transaction]:
 
 
 def suggest_uncategorized_categories(transactions: List[Transaction]) -> List[Suggestion]:
-    """Stub categorizer. Later this can use prior categorized expenses."""
-    return transactions
+    """Sync uncategorized Notion expenses into the ML review queue.
+
+    New expenses normally enter the queue when they're logged; this backfills
+    anything older (or logged while the hook was broken) and returns the full
+    pending queue so the respond node can present every open suggestion.
+    """
+    from personal_assistant.ml.expense_categorizer import review_queue
+    from personal_assistant.ml.expense_categorizer.service import classify_and_enqueue
+
+    for transaction in transactions:
+        page_id = transaction.get("id") or ""
+        if not page_id or review_queue.has_pending_for_page(page_id):
+            continue
+        classify_and_enqueue(
+            notion_page_id=page_id,
+            description=str(transaction.get("Description") or ""),
+            amount=float(transaction.get("Amount") or 0),
+            date=str(transaction.get("Date") or ""),
+        )
+
+    return [item.to_dict() for item in review_queue.pending_items()]
 
 
 def _format_amount(value: Any) -> str:
@@ -68,23 +87,29 @@ def _format_amount(value: Any) -> str:
 
 
 def format_uncategorized_review(transactions: List[Transaction], suggestions: List[Suggestion]) -> str:
-    if not transactions:
+    if not transactions and not suggestions:
         return "No uncategorized Tal expenses found. Suspiciously tidy. I approve."
 
-    lines = [
-        f"Found {len(transactions)} uncategorized Tal expense(s).",
-        "",
-        "Suggestions are stubbed for now, so I’m returning the fetched transactions unchanged:",
-    ]
+    lines = [f"{len(suggestions)} expense(s) waiting for category review:", ""]
     for index, item in enumerate(suggestions, start=1):
-        description = item.get("Description") or item.get("description") or "Expense"
-        amount = item.get("Amount") or item.get("amount") or 0
-        date = item.get("Date") or item.get("date") or "No date"
-        url = item.get("url")
-        line = f"{index}. {date} | {description} | ₪{_format_amount(amount)}"
-        if url:
-            line += f" | {url}"
-        lines.append(line)
+        review_id = item.get("review_id") or "?"
+        description = item.get("description") or item.get("Description") or "Expense"
+        amount = item.get("amount") or item.get("Amount") or 0
+        date = str(item.get("date") or item.get("Date") or "No date")[:10]
+        sub_category = item.get("predicted_sub_category")
+        if sub_category:
+            confidence = item.get("confidence")
+            confidence_text = f"{confidence:.0%}" if isinstance(confidence, (int, float)) else "?"
+            suggestion_text = f"{item.get('predicted_category')} / {sub_category} ({confidence_text})"
+        else:
+            suggestion_text = "no prediction (model not trained yet)"
+        lines.append(
+            f"{index}. [{review_id}] {date} | {description} | ₪{_format_amount(amount)} -> {suggestion_text}"
+        )
+    lines += [
+        "",
+        "Confirm or correct each item; resolutions update Notion and retrain the model.",
+    ]
     return "\n".join(lines)
 
 

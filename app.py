@@ -13,6 +13,11 @@ logging.basicConfig(
 
 
 def main() -> None:
+    # First boot on a fresh container trains the expense categorizer from
+    # Notion; afterwards the persisted model in budget_data/ml/ is reused.
+    from personal_assistant.ml.expense_categorizer.service import ensure_model_trained
+
+    ensure_model_trained()
     run_bot()
 
 

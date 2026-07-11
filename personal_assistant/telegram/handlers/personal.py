@@ -177,7 +177,7 @@ async def handle_personal_assistant_text(update: Update, context: ContextTypes.D
             await message.reply_text("I couldn't generate a financial advisor response.")
         return
 
-    agent = runtime.get_or_build_agent(chat_id)
+    agent = await runtime.get_or_build_agent(chat_id)
     status_msg = await message.reply_text("⏳ Working on it...")
     stop_typing = asyncio.Event()
     typing_task = asyncio.create_task(_keep_typing(context.bot, message.chat_id, stop_typing))

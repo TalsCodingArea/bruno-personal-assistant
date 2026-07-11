@@ -12,6 +12,12 @@ A self-hosted AI-powered personal assistant running on a Raspberry Pi, built wit
 - Monthly and weekly spending summaries
 - Real-time budget evaluation after every logged expense
 
+### 🏷️ ML Expense Categorization (human-in-the-loop)
+- An on-device scikit-learn model (TF-IDF word + char n-grams → logistic regression, Hebrew-friendly) predicts Category / Sub Category for every new uncategorized Tal expense
+- Predictions queue locally in `budget_data/ml/`; a batched Telegram digest every morning lists what's waiting
+- Review through the assistant: confirm or correct each suggestion — confirmations update the Notion expense page and retrain the model on the spot
+- Initial training happens automatically on first boot (all categorized `Tal 👨🏻` expenses are pulled from Notion); rerun manually anytime with `python scripts/train_expense_categorizer.py` to refresh the base dataset
+
 ### 🎬 Movie Tracker
 - Add movies to a Notion watchlist with genres and AI-generated mood tags
 - Log watches and ratings
@@ -128,7 +134,7 @@ ASSISTANT_LLM_MODEL=gpt-4o-mini
 ASSISTANT_LLM_TEMPERATURE=0.7
 
 # Notion
-NOTION_API_KEY=
+NOTION_API_KEY=  # also used to auth the read-only Notion MCP fallback (see below)
 EXPENSES_DATABASE_ID=
 INCOME_DATABASE_ID=
 MOVIES_DATABASE_ID=
@@ -146,6 +152,13 @@ THINGS_EMAIL=
 OMDB_API_KEY=
 PDF_ENDPOINT_ACCESS_TOKEN=
 RECEIPT_CATEGORY_OPTIONS=Groceries,Restaurant,Bills,EV,Online Services,Therapy,Decor
+
+# Expense review digest (optional — defaults shown)
+EXPENSE_REVIEW_DIGEST_HOUR=8
+ASSISTANT_TIMEZONE=Asia/Jerusalem
+
+# Calendar (structure only for now, see personal_assistant/integrations/calendar)
+CALENDAR_PROVIDER=google
 ```
 
 ### 3. Prepare personal data files
@@ -185,17 +198,56 @@ docker-compose up
 
 ## 🗺️ Roadmap
 
-- [ ] **Calendar read access** — Query upcoming events from Google Calendar
+- [ ] **Calendar read access** — Query upcoming events from Google Calendar (provider-agnostic structure in place at `personal_assistant/integrations/calendar/`; Google auth + API calls pending)
 - [ ] **Academic tasks integration** — Pull tasks and deadlines from academic sources
 - [ ] **Smart study scheduler** — Analyze academic tasks and auto-book "Study Session" slots in the calendar based on priority and available time
 
 ---
 
-## 🛠️ Raspberry Pi System Dependencies
+## 🔌 Notion MCP fallback
 
-Required for WeasyPrint (PDF generation):
+For requests that don't fit any dedicated Notion tool, the agent has a
+read-only fallback backed by Notion's official local MCP server
+(`@notionhq/notion-mcp-server`, pinned to the version in
+`notion_mcp.py` so upstream tool renames can't silently change the tool set),
+spawned on demand via `npx` and authenticated with the same `NOTION_API_KEY`
+above. Writes always go through the dedicated
+tools in `tools/notion_tools.py` / `tools/financial_advisor/notion_tools.py` —
+the MCP tools are filtered down to a read-only allowlist in
+`personal_assistant/tools/mcp/notion_mcp.py`.
+
+Requires Node.js (for `npx`) on whatever machine runs the bot. After first
+install, verify the allowlist still matches the server's actual tool names:
+
+```bash
+python -m personal_assistant.tools.mcp.notion_mcp
+```
+
+If the Notion MCP server is unreachable, the fallback disables itself for a
+5-minute cooldown and then retries — the rest of the agent keeps working
+either way. An agent built during an outage picks the fallback tools back up
+automatically once the server recovers.
+
+---
+
+## 🛠️ Host System Dependencies (Mac Mini)
+
+The bot runs on a Mac Mini. System-level requirements:
+
+```bash
+# WeasyPrint (PDF generation)
+brew install pango gdk-pixbuf libffi
+
+# Node.js for the Notion MCP fallback (`npx` must be on PATH)
+brew install node
+```
+
+<details>
+<summary>Legacy: Raspberry Pi (previous host)</summary>
 
 ```bash
 sudo apt install libpango-1.0-0 libpangoft2-1.0-0 libpangocairo-1.0-0 \
                  libgdk-pixbuf2.0-0 libffi-dev shared-mime-info
 ```
+
+</details>

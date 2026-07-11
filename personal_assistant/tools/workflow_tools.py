@@ -34,7 +34,9 @@ def make_uncategorized_review_tool(uncategorized_review_graph):
         """
         Review uncategorized Tal expenses.
         Use this when the user asks to review, categorize, or inspect uncategorized
-        transactions. This version only returns suggestions and does not update Notion.
+        transactions. It syncs uncategorized Notion expenses into the ML review queue
+        and returns every pending item with its suggested Category / Sub Category.
+        Resolutions happen afterwards via resolve_expense_review per item.
         """
         from personal_assistant.agent.general.uncategorized_workflow import async_start_uncategorized_review
 

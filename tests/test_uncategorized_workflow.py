@@ -12,30 +12,63 @@ from personal_assistant.agent.general.uncategorized_workflow import (
 
 
 class UncategorizedWorkflowTest(unittest.IsolatedAsyncioTestCase):
-    async def test_review_workflow_fetches_and_returns_stub_suggestions(self) -> None:
+    async def test_review_workflow_fetches_suggests_and_formats(self) -> None:
         fetched = [
             {
+                "id": "page-1",
                 "Description": "Coffee",
                 "Amount": 12.5,
                 "Date": "2026-06-27",
                 "url": "https://notion.test/coffee",
             }
         ]
+        suggestions = [
+            {
+                "review_id": "abc123",
+                "description": "Coffee",
+                "amount": 12.5,
+                "date": "2026-06-27",
+                "predicted_category": "Lifestyle 🏞️",
+                "predicted_sub_category": "Snacks & Drinks 🍫",
+                "confidence": 0.87,
+            }
+        ]
         seen_by_suggester = []
 
         def suggest(transactions):
             seen_by_suggester.extend(transactions)
-            return transactions
+            return suggestions
 
         graph = create_uncategorized_review_graph(fetcher=lambda: fetched, suggester=suggest)
 
         state = await async_start_uncategorized_review(graph)
 
         self.assertEqual(state["transactions"], fetched)
-        self.assertEqual(state["suggestions"], fetched)
+        self.assertEqual(state["suggestions"], suggestions)
         self.assertEqual(seen_by_suggester, fetched)
-        self.assertIn("Coffee", state["messages"][-1].content)
-        self.assertIn("https://notion.test/coffee", state["messages"][-1].content)
+        message = state["messages"][-1].content
+        self.assertIn("Coffee", message)
+        self.assertIn("abc123", message)
+        self.assertIn("Snacks & Drinks 🍫", message)
+        self.assertIn("87%", message)
+
+    async def test_review_workflow_shows_unpredicted_items(self) -> None:
+        suggestions = [
+            {
+                "review_id": "def456",
+                "description": "Mystery",
+                "amount": 10,
+                "date": "2026-07-01",
+                "predicted_category": None,
+                "predicted_sub_category": None,
+                "confidence": None,
+            }
+        ]
+        graph = create_uncategorized_review_graph(fetcher=lambda: [], suggester=lambda t: suggestions)
+
+        state = await async_start_uncategorized_review(graph)
+
+        self.assertIn("no prediction", state["messages"][-1].content)
 
 class UncategorizedFetchTest(unittest.TestCase):
     @patch.dict(os.environ, {"EXPENSES_DATABASE_ID": "expenses-db"})
