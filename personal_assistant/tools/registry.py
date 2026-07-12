@@ -35,16 +35,27 @@ from personal_assistant.tools.financial_advisor.notion_tools import (
 from personal_assistant.tools.expense_review_tools import (
     dismiss_expense_review,
     get_pending_expense_reviews,
+    get_uncategorized_expenses_status,
     resolve_expense_review,
 )
 from personal_assistant.tools.financial_advisor.memory import (
     get_current_bank_balance,
     get_financial_profile,
     get_financial_recommendations,
+    get_future_planning_preferences,
     log_financial_recommendation,
+    remove_active_savings_goal,
+    set_active_savings_goal,
     update_bank_account_balance,
     update_emergency_fund_months,
     update_financial_recommendation_status,
+    update_future_expense_saving_rule,
+    update_vacation_preferences,
+)
+from personal_assistant.tools.financial_advisor.savings_tools import (
+    apply_future_expense_saving_plan,
+    create_savings_budget_rows,
+    preview_future_expense_saving_plan,
 )
 
 
@@ -86,9 +97,18 @@ def get_tools():
         get_financial_recommendations,
         update_financial_recommendation_status,
         update_financial_advisor_rule,
+        get_uncategorized_expenses_status,
         get_pending_expense_reviews,
         resolve_expense_review,
         dismiss_expense_review,
+        get_future_planning_preferences,
+        update_vacation_preferences,
+        update_future_expense_saving_rule,
+        set_active_savings_goal,
+        remove_active_savings_goal,
+        preview_future_expense_saving_plan,
+        apply_future_expense_saving_plan,
+        create_savings_budget_rows,
     ]
 
 

@@ -12,6 +12,14 @@ _CANCEL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Uncategorized-expense review → general agent (start_uncategorized_review tool).
+# Must be checked BEFORE the finance patterns: "uncategorized expenses" contains
+# "expenses", which would otherwise hijack the message to the financial advisor.
+_UNCATEGORIZED_RE = re.compile(
+    r"\buncategori[sz]ed\b|\bcategori[sz]ation\s+(queue|review)\b",
+    re.IGNORECASE,
+)
+
 # Budget planning trigger phrases → finance capability
 _BUDGET_RE = re.compile(
     r"\b(set|plan|start|do|run|review)\s+(my\s+)?(monthly\s+)?budget\b"
@@ -71,6 +79,8 @@ INTENT_PROMPT = ChatPromptTemplate.from_messages([
             "Use 'finance' when the user wants to plan, set, or review their monthly budget "
             "(e.g. 'set my budget for this month', 'let's do the monthly budget', "
             "'budget review', 'plan my finances for the month'). "
+            "Use 'general' when the user wants to review or categorize uncategorized "
+            "expenses/transactions — that workflow lives in the general agent. "
             "Return only the label, nothing else."
         ),
     ),
@@ -86,6 +96,11 @@ async def classify_intent(llm, text: str) -> str:
     Falls back to an LLM call for everything else.
     """
     stripped = (text or "").strip()
+
+    # Fast path -1: uncategorized-expense review belongs to the general agent's
+    # start_uncategorized_review workflow, not the financial advisor.
+    if _UNCATEGORIZED_RE.search(stripped):
+        return "general"
 
     # Fast path 0: budget planning is handled by the finance capability.
     if _BUDGET_RE.search(stripped):

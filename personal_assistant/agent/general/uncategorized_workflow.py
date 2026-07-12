@@ -1,76 +1,39 @@
+"""Human-in-the-loop review workflow for uncategorized expenses.
+
+This graph is the interactive part: present every queued ML suggestion so the
+user can confirm/correct each one. The underlying data pull (Notion fetch +
+review-queue sync) lives in tools/expense_review_tools.py and is also exposed
+directly as the get_uncategorized_expenses_status tool for quick status
+questions that don't need the full review.
+"""
+
 from __future__ import annotations
 
-import os
 from typing import Annotated, Any, Callable, Dict, List, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.graph import StateGraph
 from langgraph.graph.message import add_messages
 
+from personal_assistant.tools.expense_review_tools import (
+    fetch_uncategorized_expenses,
+    sync_uncategorized_to_review_queue,
+)
 
 Transaction = Dict[str, Any]
 Suggestion = Dict[str, Any]
 FetchTransactions = Callable[[], List[Transaction]]
 SuggestTransactions = Callable[[List[Transaction]], List[Suggestion]]
 
+# Backwards-compatible aliases (the fetch/sync logic moved to the tools layer).
+fetch_uncategorized_transactions = fetch_uncategorized_expenses
+suggest_uncategorized_categories = sync_uncategorized_to_review_queue
+
 
 class UncategorizedReviewState(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
     transactions: List[Transaction]
     suggestions: List[Suggestion]
-
-
-def fetch_uncategorized_transactions() -> List[Transaction]:
-    from personal_assistant.tools.notion_tools import _raw_notion_response_to_dict, notion_get_database_pages
-
-    expenses_database_id = os.getenv("EXPENSES_DATABASE_ID")
-    if not expenses_database_id:
-        raise ValueError("Missing EXPENSES_DATABASE_ID environment variable.")
-
-    raw = notion_get_database_pages.invoke(
-        {
-            "database_id": expenses_database_id,
-            "filter": {
-                "and": [
-                    {"property": "Category", "multi_select": {"contains": "Uncategorized"}},
-                    {"property": "Tag", "multi_select": {"contains": "Tal 👨🏻"}},
-                ]
-            },
-            "sorts": [{"property": "Date", "direction": "descending"}],
-        }
-    )
-    rows = _raw_notion_response_to_dict(
-        ["Description", "Final", "Amount", "Category", "Sub Category", "Date"],
-        raw,
-    )
-    for row in rows:
-        row["Amount"] = row.get("Final") or row.get("Amount") or 0
-        row.pop("Final", None)
-    return rows
-
-
-def suggest_uncategorized_categories(transactions: List[Transaction]) -> List[Suggestion]:
-    """Sync uncategorized Notion expenses into the ML review queue.
-
-    New expenses normally enter the queue when they're logged; this backfills
-    anything older (or logged while the hook was broken) and returns the full
-    pending queue so the respond node can present every open suggestion.
-    """
-    from personal_assistant.ml.expense_categorizer import review_queue
-    from personal_assistant.ml.expense_categorizer.service import classify_and_enqueue
-
-    for transaction in transactions:
-        page_id = transaction.get("id") or ""
-        if not page_id or review_queue.has_pending_for_page(page_id):
-            continue
-        classify_and_enqueue(
-            notion_page_id=page_id,
-            description=str(transaction.get("Description") or ""),
-            amount=float(transaction.get("Amount") or 0),
-            date=str(transaction.get("Date") or ""),
-        )
-
-    return [item.to_dict() for item in review_queue.pending_items()]
 
 
 def _format_amount(value: Any) -> str:

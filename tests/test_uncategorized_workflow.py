@@ -70,6 +70,43 @@ class UncategorizedWorkflowTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("no prediction", state["messages"][-1].content)
 
+class UncategorizedStatusToolTest(unittest.TestCase):
+    """get_uncategorized_expenses_status is a plain tool: pull + brief, no workflow."""
+
+    @patch("personal_assistant.tools.expense_review_tools.sync_uncategorized_to_review_queue")
+    @patch("personal_assistant.tools.expense_review_tools.fetch_uncategorized_expenses")
+    def test_status_reports_counts_only(self, fetch, sync) -> None:
+        from personal_assistant.tools.expense_review_tools import get_uncategorized_expenses_status
+
+        fetch.return_value = [{"id": f"page-{i}"} for i in range(3)]
+        sync.return_value = [
+            {"review_id": "r1", "predicted_sub_category": "Supermarket 🛒"},
+            {"review_id": "r2", "predicted_sub_category": "Fuel ⛽"},
+            {"review_id": "r3", "predicted_sub_category": None},
+        ]
+
+        result = get_uncategorized_expenses_status.invoke({})
+
+        self.assertIn("Uncategorized expenses in Notion: 3", result)
+        self.assertIn("With a queued ML suggestion: 2", result)
+        self.assertIn("without a prediction yet", result)
+        # A status brief must not drag in summaries or projections.
+        self.assertNotIn("projected", result.lower())
+        self.assertNotIn("total spent", result.lower())
+
+    @patch("personal_assistant.tools.expense_review_tools.sync_uncategorized_to_review_queue")
+    @patch("personal_assistant.tools.expense_review_tools.fetch_uncategorized_expenses")
+    def test_status_when_clean(self, fetch, sync) -> None:
+        from personal_assistant.tools.expense_review_tools import get_uncategorized_expenses_status
+
+        fetch.return_value = []
+        sync.return_value = []
+
+        result = get_uncategorized_expenses_status.invoke({})
+
+        self.assertIn("No uncategorized expenses", result)
+
+
 class UncategorizedFetchTest(unittest.TestCase):
     @patch.dict(os.environ, {"EXPENSES_DATABASE_ID": "expenses-db"})
     @patch("personal_assistant.tools.notion_tools._raw_notion_response_to_dict")

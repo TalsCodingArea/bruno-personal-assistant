@@ -12,6 +12,13 @@ A self-hosted AI-powered personal assistant running on a Raspberry Pi, built wit
 - Monthly and weekly spending summaries
 - Real-time budget evaluation after every logged expense
 
+### 🔮 Future Planning (purchases, vacations, expenses)
+- **Future Purchases**: captured with a Reason (Bruno asks why; if you don't answer he stores a small "(speculated)" note) and a rough budget; goals you're actively working toward are remembered locally with their strategy (saving vs. over-budgeting)
+- **Future Vacations**: Bruno brainstorms rough cost and best timing with you, and points out when fewer vacations are planned than your preference (default: at least 1)
+- **Future Expenses**: captured expenses automatically get a savings schedule — default 500 ILS/month, max 3 months, split evenly, saved in the months right before the due month (1,000 due April → 500 in Feb + Mar)
+- Every saving installment becomes a `Saving - <name>` row in the Budget DB, linked to that month's Financial Summary — the only Budget rows that don't match a sub-category
+- All preferences live in the advisor profile and can be shown/changed in conversation (`get_future_planning_preferences`, update tools)
+
 ### 🏷️ ML Expense Categorization (human-in-the-loop)
 - An on-device scikit-learn model (TF-IDF word + char n-grams → logistic regression, Hebrew-friendly) predicts Category / Sub Category for every new uncategorized Tal expense
 - Predictions queue locally in `budget_data/ml/`; a batched Telegram digest every morning lists what's waiting

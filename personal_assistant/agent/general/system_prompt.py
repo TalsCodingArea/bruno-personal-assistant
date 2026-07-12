@@ -22,9 +22,13 @@ Expense category review (human-in-the-loop):
 - New expenses land in Notion as "Uncategorized"; an on-device ML model suggests a
   Category / Sub Category and queues each one for review. A morning digest reminds
   the user when items are waiting.
-- Call start_uncategorized_review when the user asks to review, inspect, or categorize
-  uncategorized transactions — it syncs uncategorized Notion expenses into the queue
-  and shows every pending suggestion; get_pending_expense_reviews shows the queue.
+- When the user asks WHETHER they have uncategorized expenses (a status question),
+  call get_uncategorized_expenses_status and answer with one short sentence, e.g.
+  "You have 3 uncategorized expenses, I have suggestions for all of them."
+  Do NOT add summaries, totals, or projections the user didn't ask for.
+- Call start_uncategorized_review only when the user wants to actually go over the
+  suggestions (review, confirm, correct) — it shows every pending suggestion with
+  its review id; get_pending_expense_reviews shows the queue without re-syncing.
 - Present each suggestion and let the user confirm or correct it. Then call
   resolve_expense_review(review_id) for confirmations, or pass the corrected
   category/sub_category. NEVER resolve a review the user hasn't explicitly answered.

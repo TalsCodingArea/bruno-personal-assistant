@@ -94,8 +94,42 @@ class FinancialAdvisorGraphTest(unittest.IsolatedAsyncioTestCase):
         state = result["state"]
         self.assertEqual(state["sub_intent"], "future_expense_capture")
         self.assertEqual(state["evaluation"]["reserve"]["monthly_reserve"], 450)
-        self.assertEqual(state["write_plan"]["action"], "create_future_expense")
-        self.assertEqual(self.write_plans[0]["payload"]["month"], "2026-04-01")
+        self.assertEqual(state["write_plan"]["action"], "create_future_expense_with_savings")
+        payload = self.write_plans[0]["payload"]
+        self.assertEqual(payload["future_expense"]["month"], "2026-04-01")
+        # Default rule: 500/month, max 3 months -> 1800 due April from January
+        # means 3 saving months (Jan-Mar) split evenly at 600.
+        schedule = state["evaluation"]["saving_schedule"]
+        self.assertEqual(
+            schedule["installments"],
+            [
+                {"month": "2026-01", "amount": 600.0},
+                {"month": "2026-02", "amount": 600.0},
+                {"month": "2026-03", "amount": 600.0},
+            ],
+        )
+        self.assertEqual(payload["saving_plan"]["due_month"], "2026-04")
+
+    async def test_vacation_lookup_flags_missing_planned_vacation(self) -> None:
+        def empty_vacations_provider(sub_intent, period, extracted):
+            context = self._provider(sub_intent, period, extracted)
+            context["future_vacations"] = []
+            return context
+
+        runtime = FinancialAdvisorRuntime(
+            create_financial_advisor_graph(
+                None, data_provider=empty_vacations_provider, write_executor=self._writer
+            )
+        )
+        result = await runtime.ainvoke(
+            {"input": "What future vacations do I have planned?"},
+            config={"configurable": {"today": "2026-07-04"}},
+        )
+
+        evaluation = result["state"]["evaluation"]["future_vacations"]
+        self.assertEqual(evaluation["count"], 0)
+        self.assertEqual(evaluation["min_planned_vacations"], 1)
+        self.assertTrue(evaluation["needs_planning"])
 
     async def test_expense_summary_does_not_write(self) -> None:
         result = await self.runtime.ainvoke(
@@ -107,6 +141,22 @@ class FinancialAdvisorGraphTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state["sub_intent"], "expense_summary")
         self.assertIsNone(state["write_plan"]["action"])
         self.assertEqual(self.write_plans, [])
+
+    async def test_expense_projection_uses_actual_date_not_period_start(self) -> None:
+        result = await self.runtime.ainvoke(
+            {"input": "How am I doing this month?"},
+            config={"configurable": {"today": "2026-07-04"}},
+        )
+
+        state = result["state"]
+        self.assertEqual(state["sub_intent"], "expense_summary")
+        projection = state["evaluation"]["projection"]
+        # Regression: `today` was derived from period["start"] (day 1 of the
+        # month), inflating the pace projection to spent * days_in_month
+        # (2000 / 1 * 31 = 62000 instead of 2000 / 4 * 31 = 15500).
+        self.assertEqual(projection["spent_so_far"], 2000)
+        self.assertEqual(projection["projected_month_total"], 15500.0)
+        self.assertEqual(state["loaded_context"]["today"], "2026-07-04")
 
     async def test_general_finance_question_answers_without_forced_evaluation(self) -> None:
         result = await self.runtime.ainvoke(

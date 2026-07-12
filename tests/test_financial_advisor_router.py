@@ -30,6 +30,20 @@ class FinancialAdvisorRouterTest(unittest.IsolatedAsyncioTestCase):
     async def test_monthly_budget_routes_to_finance_capability(self) -> None:
         self.assertEqual(await classify_intent(NeverCalledLLM(), "Start monthly budget"), "finance")
 
+    async def test_uncategorized_review_routes_to_general_agent(self) -> None:
+        # Regression: "expenses"/"transactions" in these messages used to match
+        # the finance fast path, hijacking the uncategorized review workflow.
+        cases = [
+            "Do I have any uncategorized expenses?",
+            "Review my uncategorised transactions",
+            "Let's go over the categorization queue",
+            "Show me uncategorized expenses and your suggestions",
+        ]
+
+        for text in cases:
+            with self.subTest(text=text):
+                self.assertEqual(await classify_intent(NeverCalledLLM(), text), "general")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -62,6 +62,7 @@ class FinancialAdvisorState(TypedDict, total=False):
     sub_intent: SubIntent
     route: AdvisorRoute
     context_needs: list[ContextNeed]
+    today: str
     period: dict[str, str]
     extracted: dict[str, Any]
     loaded_context: dict[str, Any]
@@ -386,6 +387,7 @@ def _default_provider(sub_intent: SubIntent, period: dict[str, str], extracted: 
     from personal_assistant.tools.financial_advisor.memory import load_financial_profile
 
     needs = set(extracted.get("context_needs") or context_needs_for_sub_intent(sub_intent))
+    # Fallback only — load_context overrides this with the real current date.
     context: dict[str, Any] = {"today": period["start"]}
     if "rules" in needs:
         context["advisor_rules"] = load_advisor_rules()
@@ -440,11 +442,67 @@ def _default_write_executor(write_plan: dict[str, Any]) -> dict[str, Any]:
         return create_future_purchase.invoke(payload)
     if action == "create_future_expense":
         return create_future_expense.invoke(payload)
+    if action == "create_future_expense_with_savings":
+        from personal_assistant.tools.financial_advisor.savings_tools import (
+            apply_future_expense_saving_plan,
+        )
+
+        result: dict[str, Any] = {
+            "future_expense": create_future_expense.invoke(payload["future_expense"])
+        }
+        saving_plan = payload.get("saving_plan")
+        if saving_plan:
+            try:
+                result["savings"] = apply_future_expense_saving_plan.invoke(saving_plan)
+            except Exception as exc:  # budget rows failing must not undo the capture
+                result["savings"] = {"ok": False, "error": str(exc)}
+        else:
+            result["savings"] = {"ok": False, "skipped": True, "reason": "Due too soon to save ahead."}
+        return result
     if action == "update_bank_account_balance":
         return update_bank_account_balance.invoke(payload)
     if action == "update_financial_advisor_rule":
         return update_financial_advisor_rule.invoke(payload)
     return {"ok": False, "skipped": True, "reason": f"Unknown action {action}."}
+
+
+def _future_planning(context: dict[str, Any]) -> dict[str, Any]:
+    """Future-planning preferences from the loaded advisor profile."""
+    return (context.get("advisor_profile") or {}).get("future_planning") or {}
+
+
+def _expense_saving_schedule(
+    future_expense: dict[str, Any], context: dict[str, Any], today: date
+) -> dict[str, Any]:
+    """Deterministic saving schedule for a captured future expense.
+
+    Policy: every future-expense saving gets 'Saving - <name>' Budget rows in
+    the months before the due month (rule remembered in the advisor profile,
+    default 500 ILS/month over at most 3 months, split evenly).
+    """
+    from personal_assistant.tools.financial_advisor.savings_planner import plan_expense_savings
+    from personal_assistant.tools.monthly_budget.models import Month
+
+    rule = _future_planning(context).get("future_expenses", {})
+    monthly_saving = float(rule.get("default_monthly_saving_ils", 500.0) or 500.0)
+    max_months = int(rule.get("max_saving_months", 3) or 3)
+    try:
+        due_month = Month.parse(str(future_expense.get("month", ""))[:7])
+    except (ValueError, AttributeError, IndexError):
+        return {"installments": [], "error": "Could not parse the due month."}
+
+    installments = plan_expense_savings(
+        float(future_expense.get("amount") or 0),
+        due_month,
+        monthly_saving=monthly_saving,
+        max_months=max_months,
+        today=today,
+    )
+    return {
+        "rule": {"monthly_saving_ils": monthly_saving, "max_saving_months": max_months},
+        "budget_row_name": f"Saving - {future_expense.get('name') or 'Future expense'}",
+        "installments": [installment.to_dict() for installment in installments],
+    }
 
 
 def _latest_balance_value(context: dict[str, Any]) -> float | None:
@@ -483,12 +541,17 @@ def create_financial_advisor_graph(
             "sub_intent": decision["sub_intent"],
             "route": decision["route"],
             "context_needs": decision["context_needs"],
+            "today": today.isoformat(),
             "period": _month_period(today),
             "extracted": extracted,
         }
 
     async def load_context(state: FinancialAdvisorState, config: RunnableConfig) -> dict[str, Any]:
         context = provider(state["sub_intent"], state["period"], state.get("extracted", {}))
+        # The provider only knows the query period; make sure downstream
+        # consumers see the actual current date, not the period start.
+        if state.get("today"):
+            context["today"] = state["today"]
         return {"loaded_context": context}
 
     def route_after_context(state: FinancialAdvisorState) -> str:
@@ -498,7 +561,10 @@ def create_financial_advisor_graph(
         sub_intent = state["sub_intent"]
         context = state.get("loaded_context", {})
         extracted = state.get("extracted", {})
-        today = datetime.fromisoformat(state["period"]["start"]).date()
+        # Use the actual current date, not the period start (the 1st of the month).
+        # Deriving `today` from period["start"] made pace projections multiply the
+        # month-to-date spend by days_in_month (spent / day 1 * 31).
+        today = date.fromisoformat(state.get("today") or state["period"]["start"])
         evaluation: dict[str, Any] = {"sub_intent": sub_intent}
 
         if sub_intent in {"desire_affordability", "desire_capture"}:
@@ -510,6 +576,7 @@ def create_financial_advisor_graph(
             future_expense = extracted.get("future_expense", {})
             if future_expense.get("amount") and future_expense.get("month"):
                 evaluation["reserve"] = calculate_future_expense_reserve(future_expense, today).to_dict()
+                evaluation["saving_schedule"] = _expense_saving_schedule(future_expense, context, today)
             else:
                 evaluation["missing"] = [
                     key for key in ("amount", "month") if not future_expense.get(key)
@@ -573,9 +640,13 @@ def create_financial_advisor_graph(
             }
         elif sub_intent == "future_vacation_lookup":
             vacations = context.get("future_vacations", [])
+            vacation_prefs = _future_planning(context).get("vacations", {})
+            min_planned = int(vacation_prefs.get("min_planned_vacations", 1) or 0)
             evaluation["future_vacations"] = {
                 "count": len(vacations),
                 "total_budget": round(sum(float(item.get("budget") or 0) for item in vacations), 2),
+                "min_planned_vacations": min_planned,
+                "needs_planning": len(vacations) < min_planned,
             }
         elif sub_intent in {"expense_summary", "expense_drilldown", "transaction_lookup", "monthly_budget_advice"}:
             expenses = context.get("expenses", {})
@@ -610,13 +681,25 @@ def create_financial_advisor_graph(
         elif sub_intent == "future_expense_capture":
             future_expense = dict(extracted.get("future_expense", {}))
             if evaluation.get("reserve"):
-                write_plan = {
-                    "action": "create_future_expense",
-                    "payload": {
-                        "name": future_expense.get("name") or "Future expense",
+                name = future_expense.get("name") or "Future expense"
+                payload: dict[str, Any] = {
+                    "future_expense": {
+                        "name": name,
                         "amount": future_expense.get("amount"),
                         "month": future_expense.get("month"),
-                    },
+                    }
+                }
+                # Policy: every future-expense saving also gets its Budget rows.
+                schedule = evaluation.get("saving_schedule", {})
+                if schedule.get("installments"):
+                    payload["saving_plan"] = {
+                        "name": name,
+                        "amount": future_expense.get("amount"),
+                        "due_month": str(future_expense.get("month", ""))[:7],
+                    }
+                write_plan = {
+                    "action": "create_future_expense_with_savings",
+                    "payload": payload,
                     "requires_confirmation": False,
                 }
         elif sub_intent == "balance_update":
