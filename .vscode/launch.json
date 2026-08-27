@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "LangGraph Dev",
+      "type": "debugpy",
+      "request": "launch",
+
+      "program": "${workspaceFolder}/.venv/bin/langgraph",
+      "args": ["dev"],
+
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "cwd": "${workspaceFolder}",
+
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "subProcess": true
+    }
+  ]
+}
