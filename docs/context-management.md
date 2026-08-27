@@ -22,6 +22,12 @@ questions an event-driven alert, the assistant can call `get_expense_monitoring_
 load exact expense, budget, rule, calculation-version, and severity provenance on demand.
 Daily operational signals still await their dedicated presentation/acknowledgement integration.
 
+The architectural system prompt also contains the stable budget-management heuristic: prefer
+prior-month stability, derive missing caps only from grounded budgets/income, preserve income
+minus Budget pages as the variable pool, and account for future expenses over roughly three
+months. Tal-specific budgeting exceptions remain versioned Financial Rules rather than being
+added to the prompt.
+
 ## Cleanup settings
 
 `ContextPolicy` owns deterministic defaults:

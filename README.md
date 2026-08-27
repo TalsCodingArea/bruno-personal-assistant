@@ -14,6 +14,8 @@ The executable daily orchestration is described in the
 [daily budget graph walkthrough](docs/daily-budget-workflow.md).
 The independent event workflow is described in the
 [expense monitor walkthrough](docs/expense-monitoring.md).
+Agent-directed Budget page creation is described in the
+[budget planning walkthrough](docs/budget-planning.md).
 
 ## Setup
 
@@ -84,6 +86,7 @@ app/
 ├── services/
 │   ├── calculations.py # Pure deterministic finance functions
 │   ├── budget_mutation.py # Fresh-read and preference-gated writes
+│   ├── budget_planning.py # Context, validation, and approved page creation
 │   ├── daily_budget_monitoring.py # Read-to-analysis daily report
 │   ├── finance_queries.py # Fetch + calculate use cases
 │   ├── profile.py      # Durable profile versioning rules
@@ -143,6 +146,7 @@ Read tools:
 - `get_budget_status`
 - `forecast_month_end`
 - `get_upcoming_planned_expenses`
+- `get_budget_planning_context`
 
 Draft tools:
 
@@ -150,6 +154,7 @@ Draft tools:
 - `draft_planned_expense`
 - `draft_financial_profile_update`
 - `draft_interaction_preference_update`
+- `draft_monthly_budget_plan`
 
 Preference read tools:
 
@@ -161,6 +166,7 @@ Approval-interrupted write tools:
 
 - `apply_financial_profile_update`
 - `apply_interaction_preference_update`
+- `apply_monthly_budget_plan`
 
 Draft tools return proposals only. The profile apply tool is included only in the approval-aware
 catalog and call LangGraph `interrupt()` before touching Notion.

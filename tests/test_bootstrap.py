@@ -32,11 +32,14 @@ def test_bootstrap_connects_safe_tools_to_real_notion_sdk_without_requesting_dat
         "draft_financial_profile_update",
         "get_interaction_profile",
         "draft_interaction_preference_update",
-        "get_expense_monitoring_decisions",
+            "get_expense_monitoring_decisions",
+            "get_budget_planning_context",
+            "draft_monthly_budget_plan",
     }
     assert {tool.name for tool in application.tools.write} == {
         "apply_financial_profile_update",
         "apply_interaction_preference_update",
+        "apply_monthly_budget_plan",
     }
     asyncio.run(application.aclose())
 

@@ -59,6 +59,9 @@ count the full transaction against multiple budgets.
 - Missing `Progressive` is conservatively forecast as discrete and surfaced as an assumption
 - The guarded mutation adapter validates all four adjustment properties and the original five
   budget properties before writing; see `docs/budget-mutation.md`
+- Approved monthly creation plans also use the four adjustment/audit properties. Their
+  deterministic operation ID begins with `BCRT-`, Baseline Budget equals the initial Budget,
+  and the reason identifies the cap basis and approved plan.
 
 ## Future Expenses
 
@@ -115,6 +118,6 @@ state through its dedicated repository.
 
 ## Current write policy
 
-Draft tools never call a Notion mutation endpoint. Both financial-profile and
-interaction-profile apply tools call LangGraph `interrupt()` before invoking their services. A
-client must resume the same `thread_id` with explicit approval before Notion is changed.
+Draft tools never call a Notion mutation endpoint. Financial-profile, interaction-profile, and
+monthly-budget apply tools call LangGraph `interrupt()` before invoking their services. A client
+must resume the same `thread_id` with explicit approval before Notion is changed.

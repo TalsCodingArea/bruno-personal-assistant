@@ -9,11 +9,13 @@ from langchain_core.utils.function_calling import convert_to_openai_tool
 
 from app.integrations.expense_monitor_ledger import InMemoryExpenseMonitorLedger
 from app.integrations.notion_profile import NotionFinancialProfileRepository
+from app.services.budget_planning import BudgetPlanningService
 from app.services.finance_queries import FinanceQueryService
 from app.services.interaction import InteractionProfileService
 from app.services.profile import FinancialProfileService
 from app.tools import build_tool_catalog
 from tests.fakes import FakeFinanceReader, FakeNotion
+from tests.test_budget_planning import CreationRepository, Rules
 
 
 def _json_schema_patterns(value: Any) -> Iterator[str]:
@@ -66,6 +68,54 @@ def test_monitoring_context_tool_is_read_only_and_opt_in() -> None:
     assert tool not in catalog.write
 
 
+def test_budget_tools_support_context_then_agent_directed_draft() -> None:
+    finance_reader = FakeFinanceReader()
+    planning = BudgetPlanningService(
+        finance_reader,
+        Rules(),
+        CreationRepository(),
+    )
+    catalog = build_tool_catalog(
+        FinanceQueryService(finance_reader),
+        budget_planning=planning,
+    )
+    context_tool = next(
+        item for item in catalog.read if item.name == "get_budget_planning_context"
+    )
+    draft_tool = next(
+        item for item in catalog.draft if item.name == "draft_monthly_budget_plan"
+    )
+
+    async def run() -> object:
+        context = await context_tool.ainvoke({"month": "2026-09"})
+        return await draft_tool.ainvoke(
+            {
+                "month": "2026-09",
+                "source_fingerprint": context["source_fingerprint"],
+                "financial_cap": "1500",
+                "cap_basis": "user_provided",
+                "cap_rationale": "Tal supplied the cap.",
+                "items": [
+                    {
+                        "subcategory": "Rent",
+                        "amount": "1000",
+                        "progressive": "Accumulated",
+                        "volatility_percent": "0",
+                        "purpose": "regular",
+                        "rationale": "Stable rent allocation.",
+                    }
+                ],
+            }
+        )
+
+    draft = asyncio.run(run())
+
+    assert draft["financial_cap"] == "1500.00"
+    assert draft["total_budget_after"] == "1000.00"
+    assert draft["variable_reserve_after"] is None
+    assert draft["warnings"]
+
+
 def test_planned_expense_draft_is_calculated_without_a_write() -> None:
     catalog = build_tool_catalog(FinanceQueryService(FakeFinanceReader()))
     draft_tool = next(tool for tool in catalog.draft if tool.name == "draft_planned_expense")
@@ -90,8 +140,17 @@ def test_agent_tool_schemas_do_not_contain_unsupported_regex_lookaround() -> Non
         NotionFinancialProfileRepository(FakeNotion(), "profile")
     )
     interaction = InteractionProfileService(profile)
+    finance_reader = FakeFinanceReader()
+    planning = BudgetPlanningService(
+        finance_reader,
+        profile,
+        CreationRepository(),
+    )
     catalog = build_tool_catalog(
-        FinanceQueryService(FakeFinanceReader()), profile, interaction
+        FinanceQueryService(finance_reader),
+        profile,
+        interaction,
+        budget_planning=planning,
     )
 
     for agent_tool in catalog.all:

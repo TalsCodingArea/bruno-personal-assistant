@@ -14,6 +14,7 @@ from app.integrations.expense_monitor_ledger import SQLiteExpenseMonitorLedger
 from app.integrations.expense_notifications import TraceExpenseAlertNotifier
 from app.integrations.notion import NotionClient
 from app.integrations.notion_budget_mutation import NotionBudgetMutationRepository
+from app.integrations.notion_budget_planning import NotionBudgetPlanCreationRepository
 from app.integrations.notion_finance import NotionFinanceReader
 from app.integrations.notion_operational_context import (
     NotionOperationalContextRepository,
@@ -25,6 +26,7 @@ from app.integrations.openai_budget_review import (
     OpenAIBudgetPreferenceReviewer,
 )
 from app.services.budget_mutation import BudgetMutationService
+from app.services.budget_planning import BudgetPlanningService
 from app.services.daily_budget_monitoring import DailyBudgetMonitoringService
 from app.services.expense_monitor_workflow import ExpenseMonitorWorkflowService
 from app.services.finance_queries import FinanceQueryService
@@ -45,6 +47,7 @@ class FinanceApplication:
     daily_monitoring: DailyBudgetMonitoringService
     operational_context: OperationalContextService
     budget_mutation: BudgetMutationService
+    budget_planning: BudgetPlanningService
     daily_budget_graph: DailyBudgetGraph
     expense_monitoring: ExpenseMonitorWorkflowService
     expense_monitor_graph: ExpenseMonitorGraph
@@ -115,6 +118,11 @@ def build_finance_application(
         NotionBudgetMutationRepository(notion, sources.budgets),
         preference_reviewer,
     )
+    budget_planning = BudgetPlanningService(
+        finance_reader,
+        profile,
+        NotionBudgetPlanCreationRepository(notion, sources.budgets),
+    )
     daily_budget_graph = build_daily_budget_graph(
         daily_monitoring,
         operational_context,
@@ -139,6 +147,7 @@ def build_finance_application(
         daily_monitoring=daily_monitoring,
         operational_context=operational_context,
         budget_mutation=budget_mutation,
+        budget_planning=budget_planning,
         daily_budget_graph=daily_budget_graph,
         expense_monitoring=expense_monitoring,
         expense_monitor_graph=expense_monitor_graph,
@@ -149,6 +158,7 @@ def build_finance_application(
             profile,
             interaction,
             expense_monitor_ledger,
+            budget_planning,
         ),
     )
 

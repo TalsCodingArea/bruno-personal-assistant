@@ -46,6 +46,8 @@ There are two deliberately different kinds of service code.
 - `profile.py` validates stable keys, detects stale drafts, and coordinates profile versions.
 - `interaction.py` compiles controlled conversation defaults/overrides and maps changes back to
   the same versioned profile service.
+- `budget_planning.py` loads grounded planning evidence and validates an agent-designed plan;
+  it does not choose categories or allocations for the model.
 
 Example request path:
 
@@ -74,6 +76,10 @@ Tools are narrow adapters between the model's JSON arguments and application ser
 The registry is a safety and composition boundary—not a place for calculations. It exposes a
 safe catalog and an approval-aware catalog. The latter includes the profile write tool, whose
 side effect is unreachable until the thread is resumed with approval.
+
+Monthly budget creation follows the same composition rule. A read tool loads prior/target
+context, a draft tool validates the model's plan without writing, and the apply tool interrupts
+before the Notion creation repository becomes reachable.
 
 ## `graphs/`
 

@@ -15,7 +15,7 @@ from app.integrations.notion_schema import (
 )
 
 
-class PlannedExpenseSchemaNotConfigured(RuntimeError):
+class PlannedExpenseSchemaNotConfigured(NotImplementedError):
     """Future Expenses cannot be mapped until its property contract is known."""
 
 

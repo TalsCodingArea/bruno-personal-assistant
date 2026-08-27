@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import Sequence
 from datetime import date
-from typing import Any
+from typing import Any, ClassVar
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import BaseChatModel
@@ -21,10 +21,16 @@ from app.graphs import (
     start_conversation_turn,
 )
 from app.integrations.notion_profile import NotionFinancialProfileRepository
+from app.services.budget_planning import BudgetPlanningService
 from app.services.interaction import InteractionProfileService
 from app.services.profile import FinancialProfileService
-from app.tools.write import build_interaction_write_tools, build_profile_write_tools
-from tests.fakes import FakeNotion
+from app.tools.write import (
+    build_budget_write_tools,
+    build_interaction_write_tools,
+    build_profile_write_tools,
+)
+from tests.fakes import FakeFinanceReader, FakeNotion
+from tests.test_budget_planning import CreationRepository, Rules
 
 
 class CountingChatModel(BaseChatModel):
@@ -103,6 +109,9 @@ def test_assistant_receives_strict_ils_currency_policy() -> None:
 
     assert "every unlabeled monetary amount is ILS" in str(response.content)
     assert "Display money with the ₪ symbol" in str(response.content)
+    assert "get_budget_planning_context" in str(response.content)
+    assert "income minus all Budget pages" in str(response.content)
+    assert "no more than three months" in str(response.content)
 
 
 def test_context_separates_interaction_settings_from_financial_rules() -> None:
@@ -259,6 +268,50 @@ class InteractionApprovalChatModel(CountingChatModel):
         return ChatResult(generations=[ChatGeneration(message=message)])
 
 
+class BudgetApprovalChatModel(CountingChatModel):
+    """Request one guarded Budget page plan, then acknowledge creation."""
+
+    source_fingerprint: ClassVar[str] = ""
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        if any(isinstance(message, ToolMessage) for message in messages):
+            message = AIMessage(content="Budget pages created")
+        else:
+            message = AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "apply_monthly_budget_plan",
+                        "id": "budget-write-1",
+                        "args": {
+                            "month": "2026-09",
+                            "source_fingerprint": self.source_fingerprint,
+                            "financial_cap": "1500",
+                            "cap_basis": "user_provided",
+                            "cap_rationale": "Tal supplied the cap.",
+                            "items": [
+                                {
+                                    "subcategory": "Rent",
+                                    "amount": "1000",
+                                    "progressive": "Accumulated",
+                                    "volatility_percent": "0",
+                                    "purpose": "regular",
+                                    "rationale": "Stable rent allocation.",
+                                }
+                            ],
+                        },
+                    }
+                ],
+            )
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+
 def test_profile_write_interrupts_before_notion_and_runs_only_after_approval() -> None:
     notion = FakeNotion({"profile": []})
     profile = FinancialProfileService(NotionFinancialProfileRepository(notion, "profile"))
@@ -318,3 +371,35 @@ def test_interaction_write_uses_the_same_mandatory_approval_boundary() -> None:
     assert notion.created[0]["properties"]["Key"]["rich_text"][0]["text"]["content"] == (
         "assistant.banter"
     )
+
+
+def test_budget_page_creation_uses_the_same_mandatory_approval_boundary() -> None:
+    finance = FakeFinanceReader()
+    repository = CreationRepository()
+    service = BudgetPlanningService(finance, Rules(), repository)
+    BudgetApprovalChatModel.source_fingerprint = asyncio.run(
+        service.planning_context(date(2026, 9, 1))
+    ).source_fingerprint
+    graph = build_read_only_conversation_graph(
+        BudgetApprovalChatModel(),
+        build_budget_write_tools(service),
+        InMemorySaver(),
+        today=date(2026, 8, 27),
+    )
+
+    async def run() -> tuple[bool, str]:
+        pending = await start_conversation_turn(
+            graph, thread_id="budget-approval", message="Create September's budget"
+        )
+        assert repository.calls == []
+        completed = await resume_profile_write(
+            graph, thread_id="budget-approval", approved=True
+        )
+        assert completed.response is not None
+        return pending.requires_approval, str(completed.response.content)
+
+    requires_approval, response = asyncio.run(run())
+
+    assert requires_approval is True
+    assert response == "Budget pages created"
+    assert len(repository.calls) == 1

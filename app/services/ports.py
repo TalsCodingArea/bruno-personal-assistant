@@ -9,6 +9,11 @@ from app.domain.budget_mutation import (
     BudgetPreferenceReview,
     VerifiedBudgetMutation,
 )
+from app.domain.budget_planning import (
+    BudgetPlanCreationResult,
+    CreatedBudgetPage,
+    MonthlyBudgetPlanDraft,
+)
 from app.domain.expense_monitoring import (
     AlertDeliveryReceipt,
     AlertState,
@@ -155,6 +160,16 @@ class BudgetMutationRepository(Protocol):
     """Apply and postflight an already verified mutation."""
 
     async def apply(self, mutation: VerifiedBudgetMutation) -> BudgetMutationResult: ...
+
+
+class BudgetPlanCreationRepository(Protocol):
+    """Create missing pages from an approved and freshly verified plan."""
+
+    async def create(
+        self,
+        draft: MonthlyBudgetPlanDraft,
+        already_created: tuple[CreatedBudgetPage, ...],
+    ) -> BudgetPlanCreationResult: ...
 
 
 class FinancialProfileRepository(Protocol):
