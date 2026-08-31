@@ -387,13 +387,34 @@ def _validate_unique_subcategories(
 
 
 def _stability(
-    item: BudgetPageDraft, previous: Budget | None
+    item: BudgetPageDraft,
+    previous: Budget | None,
 ) -> BudgetStabilityComparison:
     return BudgetStabilityComparison(
         subcategory=item.subcategory,
-        previous_amount=previous.amount if previous is not None else None,
+        previous_amount=(
+            previous.amount
+            if previous is not None
+            else None
+        ),
         proposed_amount=item.amount,
-        delta=(money(item.amount - previous.amount) if previous is not None else None),
+        delta=(
+            money(item.amount - previous.amount)
+            if previous is not None
+            else None
+        ),
+        previous_progressive=(
+            previous.progressive
+            if previous is not None
+            else None
+        ),
+        proposed_progressive=item.progressive,
+        previous_volatility_percent=(
+            previous.volatility_percent
+            if previous is not None
+            else None
+        ),
+        proposed_volatility_percent=item.volatility_percent,
     )
 
 

@@ -19,12 +19,26 @@ from app.tools.money_input import CurrencyText, parse_currency_text
 class BudgetPageDraftInput(BaseModel):
     subcategory: str = Field(min_length=1, max_length=200)
     amount: CurrencyText
-    progressive: Literal["Accumulated", "Discrete"]
+    progressive: Literal["Accumulated", "Discrete"] = Field(
+        description=(
+            "Within-month spending behavior. Use Accumulated only for repeated "
+            "transactions that build throughout the month and can be pace-forecast. "
+            "Use Discrete for one or a few charges, scheduled bills, full-month "
+            "reserves, savings contributions, and future-expense allocations."
+        )
+    )
     volatility_percent: CurrencyText = Field(
         description="Controllable share from 0 through 100 as a base-10 string."
     )
     purpose: Literal["regular", "future_expense"] = "regular"
-    rationale: str = Field(min_length=1, max_length=1000)
+    rationale: str = Field(
+        min_length=1,
+        max_length=1000,
+        description=(
+            "Explain the proposed amount, Progressive classification, and "
+            "Volatility classification."
+        )
+    )
 
 
 class MonthlyBudgetPlanInput(BaseModel):

@@ -124,10 +124,10 @@ def plan_items() -> tuple[BudgetPageDraft, ...]:
         BudgetPageDraft(
             "Rent",
             Decimal("1000"),
-            ProgressiveMode.ACCUMULATED,
+            ProgressiveMode.DISCRETE,
             Decimal("0"),
             BudgetPlanPurpose.REGULAR,
-            "Stable protected rent allocation.",
+            "Protected rent paid as one monthly charge.",
         ),
         BudgetPageDraft(
             "Laptop reserve",
@@ -152,6 +152,21 @@ def test_context_loads_prior_budget_income_future_allocations_and_rules() -> Non
     assert context.future_expenses[0].status == "saving"
     assert context.guidelines[0].key == "budgeting.prefer_stability"
     assert len(context.source_fingerprint) == 64
+
+
+def test_future_expense_budget_must_be_discrete() -> None:
+    with pytest.raises(
+        ValueError,
+        match="Future-expense Budget pages must use Discrete Progressive",
+    ):
+        BudgetPageDraft(
+            subcategory="Laptop reserve",
+            amount=Decimal("300"),
+            progressive=ProgressiveMode.ACCUMULATED,
+            volatility_percent=Decimal("0"),
+            purpose=BudgetPlanPurpose.FUTURE_EXPENSE,
+            rationale="Monthly contribution toward a future laptop.",
+        )
 
 
 def test_context_surfaces_unconfigured_future_expenses_without_inventing_none() -> None:
@@ -193,8 +208,21 @@ def test_agent_selected_plan_reports_stability_variable_reserve_and_future_cover
     assert draft.variable_reserve_after == Decimal("900.00")
     assert draft.future_expense_allocation_required == Decimal("300.00")
     assert draft.future_expense_allocation_planned == Decimal("300.00")
-    assert draft.stability[0].previous_amount == Decimal("1000.00")
-    assert draft.stability[0].delta == Decimal("0.00")
+    rent_stability = draft.stability[0]
+    assert rent_stability.previous_amount == Decimal("1000.00")
+    assert rent_stability.proposed_amount == Decimal("1000.00")
+    assert rent_stability.delta == Decimal("0.00")
+    assert rent_stability.previous_progressive is ProgressiveMode.ACCUMULATED
+    assert rent_stability.proposed_progressive is ProgressiveMode.DISCRETE
+    assert rent_stability.previous_volatility_percent == Decimal("50.00")
+    assert rent_stability.proposed_volatility_percent == Decimal("0.00")
+
+    future_stability = draft.stability[1]
+    assert future_stability.previous_amount is None
+    assert future_stability.previous_progressive is None
+    assert future_stability.previous_volatility_percent is None
+    assert future_stability.proposed_progressive is ProgressiveMode.DISCRETE
+    assert future_stability.proposed_volatility_percent == Decimal("0.00")
     assert draft.operation_id.startswith("BCRT-")
 
 

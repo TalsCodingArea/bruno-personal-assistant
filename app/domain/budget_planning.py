@@ -123,6 +123,11 @@ class BudgetPageDraft:
             raise ValueError("Budget volatility_percent must be between 0 and 100")
         if not rationale:
             raise ValueError("Budget rationale cannot be empty")
+        if (
+            self.purpose is BudgetPlanPurpose.FUTURE_EXPENSE
+            and self.progressive is not ProgressiveMode.DISCRETE
+        ):
+            raise ValueError("Future-expense Budget pages must use Discrete Progressive")
         object.__setattr__(self, "subcategory", subcategory)
         object.__setattr__(self, "amount", amount)
         object.__setattr__(self, "volatility_percent", volatility)
@@ -134,16 +139,50 @@ class BudgetStabilityComparison:
     """How one proposed allocation differs from the previous month."""
 
     subcategory: str
+
     previous_amount: Decimal | None
     proposed_amount: Decimal
     delta: Decimal | None
 
+    previous_progressive: ProgressiveMode | None
+    proposed_progressive: ProgressiveMode
+
+    previous_volatility_percent: Decimal | None
+    proposed_volatility_percent: Decimal
+
     def __post_init__(self) -> None:
         if self.previous_amount is not None:
-            object.__setattr__(self, "previous_amount", money(self.previous_amount))
-        object.__setattr__(self, "proposed_amount", money(self.proposed_amount))
+            object.__setattr__(
+                self,
+                "previous_amount",
+                money(self.previous_amount),
+            )
+
+        object.__setattr__(
+            self,
+            "proposed_amount",
+            money(self.proposed_amount),
+        )
+
         if self.delta is not None:
-            object.__setattr__(self, "delta", money(self.delta))
+            object.__setattr__(
+                self,
+                "delta",
+                money(self.delta),
+            )
+
+        if self.previous_volatility_percent is not None:
+            object.__setattr__(
+                self,
+                "previous_volatility_percent",
+                money(self.previous_volatility_percent),
+            )
+
+        object.__setattr__(
+            self,
+            "proposed_volatility_percent",
+            money(self.proposed_volatility_percent),
+        )
 
 
 @dataclass(frozen=True, slots=True)

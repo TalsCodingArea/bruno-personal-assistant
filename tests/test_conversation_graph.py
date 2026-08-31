@@ -112,6 +112,11 @@ def test_assistant_receives_strict_ils_currency_policy() -> None:
     assert "get_budget_planning_context" in str(response.content)
     assert "income minus all Budget pages" in str(response.content)
     assert "no more than three months" in str(response.content)
+    assert "Progressive describes how a budget is consumed" in str(response.content)
+    assert "Future-expense allocations must be Discrete" in str(response.content)
+    assert "review recent actual spending" in str(response.content)
+    assert "get_monthly_summary" in str(response.content)
+    assert "get_budget_status" in str(response.content)
 
 
 def test_context_separates_interaction_settings_from_financial_rules() -> None:

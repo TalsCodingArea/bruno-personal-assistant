@@ -14,6 +14,7 @@ from app.services.finance_queries import FinanceQueryService
 from app.services.interaction import InteractionProfileService
 from app.services.profile import FinancialProfileService
 from app.tools import build_tool_catalog
+from app.tools.budget_input import BudgetPageDraftInput
 from tests.fakes import FakeFinanceReader, FakeNotion
 from tests.test_budget_planning import CreationRepository, Rules
 
@@ -99,10 +100,10 @@ def test_budget_tools_support_context_then_agent_directed_draft() -> None:
                     {
                         "subcategory": "Rent",
                         "amount": "1000",
-                        "progressive": "Accumulated",
+                        "progressive": "Discrete",
                         "volatility_percent": "0",
                         "purpose": "regular",
-                        "rationale": "Stable rent allocation.",
+                        "rationale": "One monthly rent payment with no donor flexibility.",
                     }
                 ],
             }
@@ -114,6 +115,19 @@ def test_budget_tools_support_context_then_agent_directed_draft() -> None:
     assert draft["total_budget_after"] == "1000.00"
     assert draft["variable_reserve_after"] is None
     assert draft["warnings"]
+
+
+def test_budget_page_tool_schema_explains_progressive_and_rationale() -> None:
+    properties = BudgetPageDraftInput.model_json_schema()["properties"]
+
+    progressive_description = properties["progressive"]["description"]
+    rationale_description = properties["rationale"]["description"]
+
+    assert "pace-forecast" in progressive_description
+    assert "full-month reserves" in progressive_description
+    assert "future-expense allocations" in progressive_description
+    assert "Progressive classification" in rationale_description
+    assert "Volatility classification" in rationale_description
 
 
 def test_planned_expense_draft_is_calculated_without_a_write() -> None:

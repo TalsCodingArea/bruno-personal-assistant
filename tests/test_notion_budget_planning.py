@@ -70,10 +70,10 @@ def draft_for(repository: NotionBudgetPlanCreationRepository):  # type: ignore[n
             BudgetPageDraft(
                 "Rent",
                 Decimal("1000"),
-                ProgressiveMode.ACCUMULATED,
+                ProgressiveMode.DISCRETE,
                 Decimal("0"),
                 BudgetPlanPurpose.REGULAR,
-                "Protected rent.",
+                "Protected monthly rent payment.",
             ),
             BudgetPageDraft(
                 "Insurance",
@@ -106,7 +106,7 @@ def test_writer_creates_complete_budget_pages_with_idempotency_metadata() -> Non
     assert rent["Name"]["title"][0]["text"]["content"] == "Rent"
     assert rent["Date"] == {"date": {"start": "2026-09-01"}}
     assert rent["Budget"] == {"number": 1000}
-    assert rent["Progressive"] == {"select": {"name": "Accumulated"}}
+    assert rent["Progressive"] == {"select": {"name": "Discrete"}}
     assert rent["Volatility"] == {"number": 0}
     assert rent["Baseline Budget"] == {"number": 1000}
     assert (
