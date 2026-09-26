@@ -1,268 +1,179 @@
-# 🤖 Personal Assistant
+# Bruno Personal Assistant
 
-A self-hosted AI-powered personal assistant running on a Raspberry Pi, built with LangChain and connected to Telegram. It manages finances, tracks movies, handles job applications, processes receipts, and runs daily automations — all through a simple chat interface.
+Bruno is the outer personal-assistant runtime. It owns Telegram channels, streaming, logging,
+receipt handling, trusted automations, durable routing context, and capability selection.
+Financial reasoning is delegated to the finance capability under
+[`Capabilities/financial-agent`](Capabilities/financial-agent/README.md).
 
----
+The dependency direction is intentional: `bruno` imports `financial_agent`, while the
+capability never imports `bruno`. Future capabilities can be added beside the financial agent
+without sharing a generic Python package name.
 
-## ✨ Features
-
-### 💸 Finance Tracking
-- Log expenses and income to Notion automatically
-- Process receipts via PDF upload — extracts vendor, date, amount, and category using GPT-4o (with OCR fallback for scanned receipts)
-- Monthly and weekly spending summaries
-- Real-time budget evaluation after every logged expense
-
-### 🔮 Future Planning (purchases, vacations, expenses)
-- **Future Purchases**: captured with a Reason (Bruno asks why; if you don't answer he stores a small "(speculated)" note) and a rough budget; goals you're actively working toward are remembered locally with their strategy (saving vs. over-budgeting)
-- **Future Vacations**: Bruno brainstorms rough cost and best timing with you, and points out when fewer vacations are planned than your preference (default: at least 1)
-- **Future Expenses**: captured expenses automatically get a savings schedule — default 500 ILS/month, max 3 months, split evenly, saved in the months right before the due month (1,000 due April → 500 in Feb + Mar)
-- Every saving installment becomes a `Saving - <name>` row in the Budget DB, linked to that month's Financial Summary — the only Budget rows that don't match a sub-category
-- All preferences live in the advisor profile and can be shown/changed in conversation (`get_future_planning_preferences`, update tools)
-
-### 🏷️ ML Expense Categorization (human-in-the-loop)
-- An on-device scikit-learn model (TF-IDF word + char n-grams → logistic regression, Hebrew-friendly) predicts Category / Sub Category for every new uncategorized Tal expense
-- Predictions queue locally in `budget_data/ml/`; a batched Telegram digest every morning lists what's waiting
-- Review through the assistant: confirm or correct each suggestion — confirmations update the Notion expense page and retrain the model on the spot
-- Initial training happens automatically on first boot (all categorized `Tal 👨🏻` expenses are pulled from Notion); rerun manually anytime with `python scripts/train_expense_categorizer.py` to refresh the base dataset
-
-### 🎬 Movie Tracker
-- Add movies to a Notion watchlist with genres and AI-generated mood tags
-- Log watches and ratings
-- Get AI-powered movie suggestions based on your mood
-
-### 💼 Job Applications
-- Send a job URL → get a tailored resume, cover letter PDF, and personal note — all generated automatically
-- Company research via DuckDuckGo + LLM synthesis
-- Logs every application to a Notion jobs database
-
-### 🧾 Receipt Processing
-- Send a receipt PDF to the Telegram receipts channel
-- Auto-extracts and categorizes the data, uploads to Notion, and evaluates the spend
-
-### 📅 Time Slot Naming
-- Time blocks live in the Notion Time Slots DB; the page name is what the calendar shows at a glance
-- When a block's tasks change, a Notion automation sends `{"tool": "update_time_slot_name", "args": {"url": "<page url>"}}` to the automations channel
-- A LangGraph workflow fetches the block's Uni Tasks and their courses, learns the naming style from recent blocks, and renames the page only if the summary changed (e.g. `Numeric - Ex.4 Q1-Q4`)
-- Course short names (`Numeric Analysis` → `Numeric`) are learned from usage and persisted in `budget_data/time_slots/`
-
-### ⚙️ Automations
-- Send JSON messages to the automations chat: `{"tool": "tool_name", "args": {}}`
-- `log_expense` — Create a Notion expense from property-name args such as `Description`, `Amount`, `Date`, `Category`, `Sub Category`, `Payment Method`, and `Type`
-- `update_time_slot_name` — Re-summarize a Time Slots page name from its current tasks (see above)
-- `morning_summary` — Daily performance recap based on your Notion day scores and workout streaks
-- `get_weekly_spending_summary` — Weekly finance overview
-- `evaluate_expense` — Inline budget check after each new expense
-
----
-
-## 🏗️ Architecture
-
-```
-Telegram Bot (app.py)
-    │
-    └── personal_assistant/telegram
-            ├── routing.py → routes updates by Telegram channel
-            └── handlers/
-                    ├── personal.py → main chat UX + streamed agent events
-                    ├── receipts.py → PDF expense logging
-                    ├── automations.py → structured JSON automation messages
-                    └── jobs.py → job application pipeline delivery
-
-Core domains:
-    ├── Conversational Agent (LangGraph)
-    │       ├── Tools: Notion CRUD, receipt OCR, movie search, ideas
-    │       ├── Events: processing, tool_calling, generating_response, response_delta, done
-    │       └── Memory: per-session chat history keyed by chat_id
-    ├── Financial Advisor Capability (LangGraph)
-    │       └── finance routing, affordability checks, budget tools, and saving plans
-    └── Job Application Pipeline
-            scrape → parse → research → generate docs → log to Notion
+```text
+Bruno/
+├── bruno/                         # Telegram shell and capability coordinator
+├── Capabilities/
+│   └── financial-agent/
+│       ├── financial_agent/       # Finance graph, services, integrations, and tools
+│       ├── docs/
+│       ├── langgraph.json          # Graphs exposed by this capability
+│       └── README.md
+├── tests/
+└── pyproject.toml
 ```
 
-**Stack:** Python 3.13 · LangChain · OpenAI GPT-4o / GPT-4o-mini · Notion API · Telegram Bot API · WeasyPrint · BeautifulSoup
+## Runtime shape
 
----
+```text
+Telegram channel
+      |
+      v
+one-node capability selector ----> general (placeholder)
+      |
+      +---------------------------> finance conversation graph
 
-## 📁 Project Structure
-
-```
-├── app.py                        # Thin Telegram bot entry point
-├── personal_assistant/
-│   ├── config.py                 # Environment-backed settings and channel IDs
-│   ├── runtime.py                # Shared LLM, memory, financial graph, session maps
-│   └── telegram/
-│       ├── bot.py                # Application creation and handler registration
-│       ├── routing.py            # Channel-based Telegram routing
-│       ├── formatting.py         # Telegram MarkdownV2 formatting helpers
-│       ├── logging.py            # Best-effort logs-channel sender
-│       └── handlers/             # Main, receipts, automations, and job delivery handlers
-├── agent/
-│   ├── builder.py                # LangGraph general assistant setup
-│   ├── workflow.py               # Platform-neutral streamed agent events
-│   ├── contexts/                 # Per-intent system prompts
-│   └── llm.py                    # LLM configuration
-├── tools/
-│   ├── notion_tools.py           # Notion DB CRUD
-│   ├── receipt_tools.py          # PDF OCR pipeline
-│   ├── job_tools.py              # Job application workflow
-│   ├── movie_tools.py            # Movie search & logging
-│   └── registry.py              # Tool registration
-├── router/
-│   └── intent_router.py          # Message intent classifier
-├── automation_functions.py       # Scheduled/triggered automations
-├── base_scripts.py               # Shared utilities (email, Notion, OpenAI)
-├── resume_data/
-│   ├── resume_template.html      # Jinja2 resume template
-│   └── cover_letter_template.html
-└── docker-compose.yml
+receipts/automations --> trusted finance automation tools --> Notion
+                                      |
+                                      v
+                          10-minute trailing-edge debounce
+                                      |
+                                      v
+                      daily analysis + guarded rebudget graph
+                                      |
+                                      v
+                              Telegram notification
 ```
 
----
+The selector has its own durable LangGraph thread per Telegram chat. Finance has a separate
+thread, so its checkpoints and approval interrupts survive routing turns. The general
+capability is intentionally a placeholder until another capability graph is connected.
 
-## 🚀 Setup
+## Run
 
-### 1. Clone & install dependencies
+Create the environment from the Bruno root, copy `.env.example`, and fill in the Telegram,
+OpenAI, and Notion values:
 
 ```bash
-git clone https://github.com/TalsCodingArea/personal-assistant.git
-cd personal-assistant
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+python -m venv .venv
+.venv/bin/python -m pip install -e '.[dev]'
+cp .env.example .env
 ```
 
-### 2. Configure environment variables
-
-Copy and fill in your `.env` file:
-
-```env
-# Telegram
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_CHAT_ID_PERSONAL_ASSISTANT=
-TELEGRAM_CHAT_ID_RECEIPTS=
-TELEGRAM_CHAT_ID_LOGS=
-TELEGRAM_CHAT_ID_AUTOMATIONS=
-
-# OpenAI
-OPENAI_API_KEY=
-ASSISTANT_LLM_MODEL=gpt-4o-mini
-ASSISTANT_LLM_TEMPERATURE=0.7
-
-# Notion
-NOTION_API_KEY=  # also used to auth the read-only Notion MCP fallback (see below)
-EXPENSES_DATABASE_ID=
-INCOME_DATABASE_ID=
-MOVIES_DATABASE_ID=
-JOBS_DATABASE_ID=
-TIME_SLOTS_DATABASE_ID=  # for time-slot naming examples (update_time_slot_name)
-# Notion — Automations
-DAY_RATING_DATABASE_ID=
-WORKOUTS_DATABASE_ID=
-
-# Email (Gmail SMTP)
-GMAIL_EMAIL=
-GMAIL_APP_PASSWORD=
-THINGS_EMAIL=
-
-# Other
-OMDB_API_KEY=
-PDF_ENDPOINT_ACCESS_TOKEN=
-RECEIPT_CATEGORY_OPTIONS=Groceries,Restaurant,Bills,EV,Online Services,Therapy,Decor
-
-# Expense review digest (optional — defaults shown)
-EXPENSE_REVIEW_DIGEST_HOUR=8
-ASSISTANT_TIMEZONE=Asia/Jerusalem
-
-# Calendar (structure only for now, see personal_assistant/integrations/calendar)
-CALENDAR_PROVIDER=google
-```
-
-### 3. Prepare personal data files
-
-These files are gitignored — you must create them locally:
-
-| File | Description |
-|---|---|
-| `resume_data/user_profile.json` | Your personal info, experience, skills |
-| `personal_notes_examples/*.txt` | Writing samples for few-shot note generation |
-| `notion_config/databases.json` | Notion DB IDs map |
-| `notion_config/finance_rules.json` | Budget % targets |
-
-### 4. Run
+Then run:
 
 ```bash
-python app.py
+.venv/bin/python -m bruno.app
 ```
 
-Or with Docker:
-```bash
-docker-compose up
-```
+## Run continuously with Docker
 
----
+The production Compose service runs the Telegram bot as a non-root process, restarts it after
+an unexpected exit, retries transient Telegram bootstrap failures, limits Docker log growth,
+and allows a graceful 45-second shutdown. The container filesystem is read-only except for
+temporary receipt processing and the `bruno-data` volume.
 
-## 📬 Telegram Channels
-
-| Channel | Purpose |
-|---|---|
-| `personal_assistant` | General chat, finance, movies, job applications |
-| `receipts` | Drop a receipt PDF here to auto-log it |
-| `automations` | Send JSON like `{"tool": "morning_summary", "args": {}}` |
-| `logs` | System output and confirmations |
-
----
-
-## 🗺️ Roadmap
-
-- [ ] **Calendar read access** — Query upcoming events from Google Calendar (provider-agnostic structure in place at `personal_assistant/integrations/calendar/`; Google auth + API calls pending)
-- [ ] **Academic tasks integration** — Pull tasks and deadlines from academic sources
-- [ ] **Smart study scheduler** — Analyze academic tasks and auto-book "Study Session" slots in the calendar based on priority and available time
-
----
-
-## 🔌 Notion MCP fallback
-
-For requests that don't fit any dedicated Notion tool, the agent has a
-read-only fallback backed by Notion's official local MCP server
-(`@notionhq/notion-mcp-server`, pinned to the version in
-`notion_mcp.py` so upstream tool renames can't silently change the tool set),
-spawned on demand via `npx` and authenticated with the same `NOTION_API_KEY`
-above. Writes always go through the dedicated
-tools in `tools/notion_tools.py` / `tools/financial_advisor/notion_tools.py` —
-the MCP tools are filtered down to a read-only allowlist in
-`personal_assistant/tools/mcp/notion_mcp.py`.
-
-Requires Node.js (for `npx`) on whatever machine runs the bot. After first
-install, verify the allowlist still matches the server's actual tool names:
+Create `.env` from the example, fill in its secrets and IDs, then build and start Bruno:
 
 ```bash
-python -m personal_assistant.tools.mcp.notion_mcp
+cp .env.example .env
+docker compose up -d --build
 ```
 
-If the Notion MCP server is unreachable, the fallback disables itself for a
-5-minute cooldown and then retries — the rest of the agent keeps working
-either way. An agent built during an outage picks the fallback tools back up
-automatically once the server recovers.
-
----
-
-## 🛠️ Host System Dependencies (Mac Mini)
-
-The bot runs on a Mac Mini. System-level requirements:
+Useful operating commands:
 
 ```bash
-# WeasyPrint (PDF generation)
-brew install pango gdk-pixbuf libffi
-
-# Node.js for the Notion MCP fallback (`npx` must be on PATH)
-brew install node
+docker compose ps
+docker compose logs --follow --tail=100 bruno
+docker compose restart bruno
+docker compose down
 ```
 
-<details>
-<summary>Legacy: Raspberry Pi (previous host)</summary>
+`docker compose down` preserves the named volume. It contains both the conversation checkpoints
+and expense-monitor ledger. Do not run `docker compose down --volumes` unless you intentionally
+want to delete that state. Back up the `bruno-data` volume before host or Docker migrations.
+
+On a Mac mini, configure macOS not to sleep automatically and configure Docker Desktop to start
+at login; Compose can restart Bruno only while the Docker engine itself is running.
+
+## Test one capability in LangGraph Studio
+
+Start the in-memory LangGraph development server for the financial capability:
 
 ```bash
-sudo apt install libpango-1.0-0 libpangoft2-1.0-0 libpangocairo-1.0-0 \
-                 libgdk-pixbuf2.0-0 libffi-dev shared-mime-info
+.venv/bin/python -m bruno capability-dev financial-agent
 ```
 
-</details>
+The server prints its API, documentation, and LangSmith Studio URLs. Telegram credentials are
+not used by this command. Standard `langgraph dev` options are forwarded after the capability
+name, for example:
+
+```bash
+.venv/bin/python -m bruno capability-dev financial-agent --port 2025 --no-browser
+```
+
+Each future folder under `Capabilities/` becomes independently testable by adding its own
+`langgraph.json`; the Bruno command discovers configurations instead of maintaining a central
+graph list.
+
+The four configured Telegram chats are allow-listed by exact chat ID:
+
+- personal assistant: capability routing and streamed finance conversations;
+- receipts: PDF receipt extraction, invoice upload, and expense creation;
+- automations: explicit JSON automation messages;
+- logs: best-effort operational errors.
+
+An existing Bruno-style automation payload remains accepted:
+
+```json
+{
+  "tool": "log_expense",
+  "args": {
+    "Description": "Coffee",
+    "Amount": 14.5,
+    "Date": "2026-08-31",
+    "Category": "Food",
+    "Timezone": "GMT+03:00"
+  }
+}
+```
+
+`Timezone` defaults to the fixed offset `GMT+03:00`. Timestamp inputs are converted to that
+offset before Bruno chooses the expense date.
+
+`check_expenses` may also be sent through the automation chat. It schedules a check rather
+than running immediately.
+
+## Expense check-up behavior
+
+Before creating an expense from a receipt, Bruno loads expenses from the receipt date. If an
+existing expense has exactly the same amount, Bruno adds the PDF to that expense regardless of
+the expense description or receipt vendor name. Otherwise Bruno creates a new expense.
+
+Every newly created receipt expense or `log_expense` call schedules the same trailing-edge check.
+A new expense within `BRUNO_EXPENSE_CHECKUP_DELAY_SECONDS` replaces the pending check, so a burst
+of expenses normally produces one analysis after ten quiet minutes.
+
+The check uses the finance agent's deterministic daily budget graph. It can react to:
+
+- actual category overspend;
+- a material projected overrun for an `Accumulated` budget;
+- a negative variable-expense reserve;
+- budgets exceeding income or missing income.
+
+`Discrete` budgets are not pace-projected. Automatic budget changes use the graph's existing
+fresh-read, rollback-capable mutation path and occur only when the active Financial Rule
+`monitoring.automatic_budget_adjustments_enabled` has JSON value `true`. Otherwise Bruno sends
+the proposed warning without writing. A savings warning is emitted only for the residual gap
+that cannot be covered by remaining income or allowable budget reallocations.
+
+The debounce is process-local. Durable checkpoints preserve conversations, but a pending
+ten-minute timer does not survive a bot restart; move this timer to a durable job queue before
+running multiple Bruno replicas.
+
+## Verify
+
+```bash
+.venv/bin/python -m pytest
+.venv/bin/python -m ruff check bruno Capabilities/financial-agent/financial_agent tests
+.venv/bin/python -m mypy bruno Capabilities/financial-agent/financial_agent
+```

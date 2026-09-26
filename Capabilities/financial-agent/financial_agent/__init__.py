@@ -1,0 +1,2 @@
+"""Finance agent application package."""
+

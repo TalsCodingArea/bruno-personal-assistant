@@ -1,32 +1,52 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
 [project]
-name = "personal-assistant"
-version = "1.0.0"
-description = "LangGraph-powered personal assistant with a Telegram gateway"
-requires-python = ">=3.13"
+name = "bruno-personal-assistant"
+version = "0.1.0"
+description = "A Telegram personal assistant with composable LangGraph capabilities."
+readme = "README.md"
+requires-python = ">=3.11,<3.15"
 dependencies = [
-    "requests",
-    "orjson==3.10.18",
-    "notion-client==2.3.0",
-    "openai",
-    "python-dotenv==1.1.1",
-    "pymupdf==1.26.5",
-    "langchain>=0.3.0",
-    "python-telegram-bot[job-queue]==22.5",
-    "langchain-openai",
-    "langgraph>=0.2.0",
-    # Job application workflow
-    "beautifulsoup4>=4.12.0",
-    "lxml>=5.0.0",
-    "weasyprint>=62.0",
-    "Jinja2>=3.1.0",
-    "ddgs",
-    "playwright>=1.44.0",
-    # Notion MCP fallback (read-only escape hatch, see personal_assistant/tools/mcp)
-    "langchain-mcp-adapters>=0.1.0",
-    # Expense categorizer ML (see personal_assistant/ml/expense_categorizer)
-    "scikit-learn>=1.4.0",
-    "joblib>=1.3.0",
+    "httpx>=0.28,<1",
+    "langchain-core>=1.4,<2",
+    "langchain-openai>=1.2,<2",
+    "langgraph>=1.2,<2",
+    "langgraph-checkpoint-sqlite>=3,<4",
+    "notion-client>=3.1,<4",
+    "openai>=2.26,<3",
+    "pymupdf>=1.26,<2",
+    "pydantic-settings>=2.14,<3",
+    "python-dotenv>=1.1,<2",
+    "python-telegram-bot[job-queue]>=22.5,<23",
 ]
 
-[tool.setuptools]
-packages = ["personal_assistant"]
+[project.optional-dependencies]
+dev = [
+    "langgraph-cli[inmem]>=0.4,<1",
+    "mypy>=1.18,<2",
+    "pytest>=9.1,<10",
+    "pytest-cov>=7,<8",
+    "ruff>=0.12,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["bruno", "Capabilities/financial-agent/financial_agent"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers"
+testpaths = ["tests"]
+pythonpath = ["Capabilities/financial-agent"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["bruno", "financial_agent"]

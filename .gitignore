@@ -1,33 +1,15 @@
-# Environment
+.DS_Store
 .env
-.env.*
-
-# Python
 .venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.langgraph_api/
+.bruno/
+.coverage
+htmlcov/
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
 *.egg-info/
 dist/
 build/
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
-
-# Personal data — not for version control
-resume_data/user_profile.json
-resume_data/*.pdf
-personal_notes_examples/
-budget_data/
-data/
-
-# Notion config — contains database IDs and personal finance rules
-notion_config/
-
-# Claude Code local settings (machine-specific permissions)
-.claude/settings.local.json
