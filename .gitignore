@@ -6,6 +6,8 @@
 .ruff_cache/
 .langgraph_api/
 .bruno/
+.bank-account/
+bank-inbox/
 .coverage
 htmlcov/
 __pycache__/

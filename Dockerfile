@@ -17,9 +17,10 @@ RUN python -m pip install --upgrade pip \
     && python -m pip install --requirement /tmp/requirements.txt
 
 COPY --chown=bruno:bruno bruno ./bruno
+COPY --chown=bruno:bruno bank_account ./bank_account
 COPY --chown=bruno:bruno Capabilities ./Capabilities
 
-RUN mkdir -p /app/data/bruno /app/data/finance \
+RUN mkdir -p /app/data/bruno /app/data/finance /app/data/bank-account \
     && chown -R bruno:bruno /app/data
 
 USER bruno

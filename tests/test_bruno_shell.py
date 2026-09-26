@@ -160,6 +160,24 @@ def test_automation_handler_dispatches_named_registered_tool() -> None:
     asyncio.run(scenario())
 
 
+def test_bank_record_payload_dispatches_with_empty_arguments() -> None:
+    async def scenario() -> None:
+        message = FakeAutomationMessage('{"args":{},"tool":"new_bank_record"}')
+        runtime = FakeAutomationRuntime()
+
+        await handle_automation_text(
+            message,
+            object(),  # type: ignore[arg-type]
+            runtime,  # type: ignore[arg-type]
+            object(),  # type: ignore[arg-type]
+        )
+
+        assert runtime.calls == [("new_bank_record", {})]
+        assert message.replies == ["automation ran"]
+
+    asyncio.run(scenario())
+
+
 def test_automation_handler_reports_missing_tool() -> None:
     async def scenario() -> None:
         message = FakeAutomationMessage('{"tool":"missing","args":{}}')

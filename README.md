@@ -9,9 +9,15 @@ The dependency direction is intentional: `bruno` imports `financial_agent`, whil
 capability never imports `bruno`. Future capabilities can be added beside the financial agent
 without sharing a generic Python package name.
 
+Bank-account movement ingestion is intentionally separate from the agent runtime under
+[`bank_account`](bank_account/README.md). It reads bank Excel exports from a dedicated inbox,
+writes them to the Bank Movement Notion database, and removes a file only after a complete,
+idempotent import.
+
 ```text
 Bruno/
 ├── bruno/                         # Telegram shell and capability coordinator
+├── bank_account/                  # Standalone Excel-to-Notion bank importer
 ├── Capabilities/
 │   └── financial-agent/
 │       ├── financial_agent/       # Finance graph, services, integrations, and tools
@@ -93,7 +99,9 @@ and expense-monitor ledger. Do not run `docker compose down --volumes` unless yo
 want to delete that state. Back up the `bruno-data` volume before host or Docker migrations.
 
 On a Mac mini, configure macOS not to sleep automatically and configure Docker Desktop to start
-at login; Compose can restart Bruno only while the Docker engine itself is running.
+at login; Compose can restart Bruno only while the Docker engine itself is running. See the
+[Mac Mini deployment guide](docs/mac-mini-deployment.md) for secure first-time setup and the
+host-side update workflow.
 
 ## Test one capability in LangGraph Studio
 
@@ -174,6 +182,6 @@ running multiple Bruno replicas.
 
 ```bash
 .venv/bin/python -m pytest
-.venv/bin/python -m ruff check bruno Capabilities/financial-agent/financial_agent tests
-.venv/bin/python -m mypy bruno Capabilities/financial-agent/financial_agent
+.venv/bin/python -m ruff check bruno bank_account Capabilities/financial-agent/financial_agent tests
+.venv/bin/python -m mypy bruno bank_account Capabilities/financial-agent/financial_agent
 ```

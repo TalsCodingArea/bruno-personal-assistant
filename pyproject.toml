@@ -15,6 +15,7 @@ dependencies = [
     "langgraph>=1.2,<2",
     "langgraph-checkpoint-sqlite>=3,<4",
     "notion-client>=3.1,<4",
+    "openpyxl>=3.1,<4",
     "openai>=2.26,<3",
     "pymupdf>=1.26,<2",
     "pydantic-settings>=2.14,<3",
@@ -29,10 +30,11 @@ dev = [
     "pytest>=9.1,<10",
     "pytest-cov>=7,<8",
     "ruff>=0.12,<1",
+    "types-openpyxl>=3.1,<4",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["bruno", "Capabilities/financial-agent/financial_agent"]
+packages = ["bruno", "bank_account", "Capabilities/financial-agent/financial_agent"]
 
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers"
@@ -49,4 +51,4 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-packages = ["bruno", "financial_agent"]
+packages = ["bruno", "bank_account", "financial_agent"]

@@ -5,6 +5,7 @@ langchain-openai>=1.2,<2
 langgraph>=1.2,<2
 langgraph-checkpoint-sqlite>=3,<4
 notion-client>=3.1,<4
+openpyxl>=3.1,<4
 openai>=2.26,<3
 pymupdf>=1.26,<2
 pydantic-settings>=2.14,<3

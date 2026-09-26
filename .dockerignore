@@ -3,6 +3,8 @@
 .env
 .venv
 .bruno
+.bank-account
+bank-inbox
 .langgraph_api
 .mypy_cache
 .pytest_cache

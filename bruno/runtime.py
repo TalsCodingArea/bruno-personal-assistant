@@ -24,6 +24,8 @@ from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
+from bank_account.automation import build_bank_account_automation_tools
+from bank_account.config import load_bank_account_settings
 from bruno.config import BrunoSettings
 from bruno.coordinator import CapabilityName, build_coordinator_graph
 from bruno.debounce import CheckupDebouncer
@@ -96,6 +98,9 @@ class BrunoRuntime:
                     source_ids["expenses"],
                     reader=finance.finance.reader,
                 )
+                if self.finance_settings.notion_token is None:
+                    raise ValueError("FINANCE_AGENT_NOTION_TOKEN is required")
+                bank_settings = load_bank_account_settings(require_notion=False)
                 tools = (
                     *build_expense_automation_tools(
                         expenses,
@@ -103,6 +108,10 @@ class BrunoRuntime:
                     ),
                     *build_expense_checkup_tools(
                         cast(DailyBudgetGraphRunner, finance.daily_budget_graph)
+                    ),
+                    *build_bank_account_automation_tools(
+                        bank_settings,
+                        self.finance_settings.notion_token.get_secret_value(),
                     ),
                 )
             except Exception:
