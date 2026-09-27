@@ -41,6 +41,8 @@ from bank_account.config import load_bank_account_settings
 from bruno.config import BrunoSettings
 from bruno.coordinator import CapabilityName, build_coordinator_graph
 from bruno.debounce import CheckupDebouncer
+from bruno.general import GeneralAgentGraph, build_general_agent_graph, run_general_turn
+from bruno.general_tools import build_general_tools
 from bruno.scheduling import RecurringTask, SQLiteAssistantStore, scheduler_loop
 
 
@@ -67,6 +69,7 @@ class BrunoRuntime:
         self._saver: AsyncSqliteSaver | None = None
         self.finance: FinanceApplication | None = None
         self.finance_graph: ConversationGraph | None = None
+        self.general_graph: GeneralAgentGraph | None = None
         self.coordinator_graph: Any | None = None
         self.expenses: ExpenseAutomationService | None = None
         self.expense_classifier: ExpenseClassificationService | None = None
@@ -114,6 +117,11 @@ class BrunoRuntime:
                     profile_service=finance.profile,
                 )
                 coordinator = build_coordinator_graph(router_model, saver)
+                general = build_general_agent_graph(
+                    model,
+                    build_general_tools(finance.operational_context),
+                    saver,
+                )
                 source_ids = self.finance_settings.require_notion_data_source_ids()
                 expenses = ExpenseAutomationService(
                     finance.notion,
@@ -178,6 +186,7 @@ class BrunoRuntime:
             self._saver = saver
             self.finance = finance
             self.finance_graph = graph
+            self.general_graph = general
             self.coordinator_graph = coordinator
             self.expenses = expenses
             self.expense_classifier = expense_classifier
@@ -228,6 +237,25 @@ class BrunoRuntime:
             "approval_request": result.approval_request,
             "deferred_notices": await self.assistant_store.pop_notices(chat_id),
         }
+
+    async def general_turn(
+        self,
+        chat_id: str,
+        message: str,
+        callbacks: list[Any],
+    ) -> dict[str, Any]:
+        """Run one turn through the expandable general operations agent."""
+
+        await self.start()
+        if self.general_graph is None:
+            raise RuntimeError("General agent is not started")
+        output = await run_general_turn(
+            self.general_graph,
+            thread_id=f"telegram:{chat_id}:general",
+            message=message,
+            callbacks=callbacks,
+        )
+        return {"output": output}
 
     async def analyze_created_expense(self, page_id: str) -> dict[str, str]:
         """Run the exact event monitor for one newly-created expense page."""

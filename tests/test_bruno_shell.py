@@ -8,7 +8,7 @@ from typing import Any
 from financial_agent.domain.models import Transaction
 from financial_agent.services.expense_automation import ExpenseAutomationService
 from financial_agent.tools.automation.expenses import build_expense_automation_tools
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.checkpoint.memory import InMemorySaver
 
 from bruno.checkups import format_checkup_message
@@ -106,6 +106,11 @@ def test_one_node_router_retains_thread_context() -> None:
 
         assert state["active_capability"] == "finance"
         assert any(message.content == "Check my budget" for message in model.calls[-1])
+        assert any(
+            isinstance(message, SystemMessage)
+            and "duplicate current operational versions" in str(message.content)
+            for message in model.calls[-1]
+        )
 
     asyncio.run(scenario())
 

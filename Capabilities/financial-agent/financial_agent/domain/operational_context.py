@@ -114,6 +114,15 @@ class OperationalContextEntry:
 
 
 @dataclass(frozen=True, slots=True)
+class OperationalContextRepair:
+    """One duplicate-current repair confirmed by the persistence adapter."""
+
+    key: str
+    kept_page_id: str
+    superseded_page_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class OperationalContextChange:
     """One deterministic difference between stored state and the latest report."""
 

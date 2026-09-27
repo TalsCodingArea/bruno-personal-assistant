@@ -15,7 +15,7 @@ Every operational page has:
 - `Kind`: `Decision` for compatibility with the existing select contract; this is not treated
   as a user-authored financial decision because Scope and Key identify it as runtime state
 - `Statement`: compact schema-versioned JSON used for reconciliation
-- `Status`: one current `Active` version; older versions become `Superseded`
+- `Status`: one current `Active` version; older system-maintained versions become `Archived`
 - `Supersedes`: link to the immediate previous version
 - `Operation ID`: automatic Notion identifier
 
@@ -77,12 +77,15 @@ guard: a stale conversation cannot acknowledge a newer condition it did not show
 
 `OperationalContextService` is internal application infrastructure, not an agent tool. Its
 writes therefore cannot be invoked through ordinary conversation. It creates a new version,
-then marks its predecessor Superseded. It verifies page identity and Notion's automatic
+then marks its predecessor Archived. It verifies page identity and Notion's automatic
 `last_edited_time` before replacement.
 
 An exact retry is idempotent. If a previous attempt created the desired version but failed
-before superseding its direct predecessor, retrying finishes that supersession. Ambiguous
-multiple current versions fail closed.
+before archiving its direct predecessor, retrying finishes that retirement. Ambiguous multiple
+current versions fail closed during ordinary finance work. Bruno's general operations graph
+exposes a dedicated repair tool: it groups Active operational pages by key, keeps the entry with
+the newest business observation, records stale siblings in its `Supersedes` relation, and
+archives them. The repair is idempotent and reports only confirmed changes.
 
 Operational state records a `proposed_adjustment_amount`; it never labels that proposal as
 applied. The daily graph persists a separate `budget_adjustment_applied` event only after the

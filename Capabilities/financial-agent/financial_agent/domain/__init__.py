@@ -57,6 +57,7 @@ from financial_agent.domain.operational_context import (
     OperationalContextLifecycle,
     OperationalContextPersistenceResult,
     OperationalContextReconciliation,
+    OperationalContextRepair,
     OperationalContextState,
     OperationalContextVersionConflict,
 )
@@ -117,6 +118,7 @@ __all__ = [
     "OperationalContextLifecycle",
     "OperationalContextPersistenceResult",
     "OperationalContextReconciliation",
+    "OperationalContextRepair",
     "OperationalContextState",
     "OperationalContextVersionConflict",
     "OverspendResolution",

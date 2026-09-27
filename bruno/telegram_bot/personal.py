@@ -51,18 +51,11 @@ async def handle_personal_text(
         await safe_log(context, settings, f"[router:error] {exc}")
         await message.reply_text("I couldn't route that request. Please try again.")
         return
-    if capability != "finance":
-        stop_typing.set()
-        await typing
-        await status.delete()
-        await message.reply_text(
-            "That belongs to the general capability, which has not been added "
-            "to the new Bruno shell yet."
-        )
-        return
 
     async def run(callbacks: list[Any]) -> dict[str, Any]:
-        return await runtime.finance_turn(str(message.chat_id), user_text, callbacks)
+        if capability == "finance":
+            return await runtime.finance_turn(str(message.chat_id), user_text, callbacks)
+        return await runtime.general_turn(str(message.chat_id), user_text, callbacks)
 
     try:
         async for event in stream_agent_events(run):
@@ -89,9 +82,9 @@ async def handle_personal_text(
             if event.type in {"done", "approval"}:
                 output = event.output or {}
             elif event.type == "error":
-                raise RuntimeError(event.error or "Finance capability failed")
+                raise RuntimeError(event.error or "Capability failed")
     except Exception as exc:
-        await safe_log(context, settings, f"[finance:error] {exc}")
+        await safe_log(context, settings, f"[{capability}:error] {exc}")
         await message.reply_text("Something went wrong. Please try again.")
         return
     finally:

@@ -11,6 +11,7 @@ from financial_agent.domain.operational_context import (
     OperationalContextKind,
     OperationalContextLifecycle,
     OperationalContextPersistenceResult,
+    OperationalContextRepair,
     OperationalContextState,
     OperationalContextVersionConflict,
     is_operational_context_key,
@@ -24,6 +25,13 @@ class OperationalContextService:
 
     def __init__(self, repository: OperationalContextRepository) -> None:
         self.repository = repository
+
+    async def repair_duplicate_current_versions(
+        self,
+    ) -> tuple[OperationalContextRepair, ...]:
+        """Repair every ambiguous Active identity and return confirmed changes."""
+
+        return await self.repository.repair_duplicate_current_versions()
 
     async def reconcile_report(
         self, report: DailyBudgetMonitoringReport

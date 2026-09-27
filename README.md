@@ -34,7 +34,10 @@ Bruno/
 Telegram channel
       |
       v
-one-node capability selector ----> general (placeholder)
+one-node capability selector ----> general operations graph
+      |                                  |
+      |                                  v
+      |                    operational-context repair tools
       |
       +---------------------------> finance conversation graph
 
@@ -51,9 +54,11 @@ receipts/automations --> trusted finance automation tools --> Notion
                    immediate critical or next-chat notice
 ```
 
-The selector has its own durable LangGraph thread per Telegram chat. Finance has a separate
-thread, so its checkpoints and approval interrupts survive routing turns. The general
-capability is intentionally a placeholder until another capability graph is connected.
+The selector has its own durable LangGraph thread per Telegram chat. Finance and general each
+have separate threads, so their context survives routing turns. The general graph starts with
+one narrow maintenance capability: it repairs duplicate Active operational-context versions by
+keeping the newest business observation and archiving stale siblings. Future general
+capabilities expand through its tool catalog without changing Telegram transport code.
 
 ## Run
 

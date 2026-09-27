@@ -37,6 +37,7 @@ from financial_agent.domain.monitoring import DailyBudgetMonitoringReport, Monit
 from financial_agent.domain.operational_context import (
     OperationalContextEntry,
     OperationalContextPersistenceResult,
+    OperationalContextRepair,
     OperationalContextState,
 )
 from financial_agent.domain.profile import FinancialProfileEntry, FinancialProfileUpdateDraft
@@ -166,6 +167,10 @@ class OperationalContextRepository(Protocol):
         state: OperationalContextState,
         expected: OperationalContextEntry | None,
     ) -> OperationalContextEntry: ...
+
+    async def repair_duplicate_current_versions(
+        self,
+    ) -> tuple[OperationalContextRepair, ...]: ...
 
 
 class BudgetPreferenceReviewer(Protocol):

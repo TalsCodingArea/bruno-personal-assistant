@@ -1,6 +1,7 @@
 """Notion persistence adapter for versioned operational budget context."""
 
 import json
+from collections import defaultdict
 from collections.abc import Mapping
 from datetime import date, datetime
 from decimal import Decimal
@@ -13,6 +14,7 @@ from financial_agent.domain.operational_context import (
     OperationalContextEntry,
     OperationalContextKind,
     OperationalContextLifecycle,
+    OperationalContextRepair,
     OperationalContextState,
     OperationalContextVersionConflict,
 )
@@ -264,6 +266,59 @@ class NotionOperationalContextRepository:
             {"property": self.props.key, "rich_text": {"equals": key}}
         )
 
+    async def current_all(self) -> tuple[OperationalContextEntry, ...]:
+        """Load every Active operational-context page for maintenance."""
+
+        return await self._query_current(
+            {
+                "property": self.props.key,
+                "rich_text": {"starts_with": OPERATIONAL_CONTEXT_KEY_PREFIX},
+            }
+        )
+
+    async def repair_duplicate_current_versions(
+        self,
+    ) -> tuple[OperationalContextRepair, ...]:
+        """Keep the newest business observation and supersede sibling versions."""
+
+        grouped: dict[str, list[OperationalContextEntry]] = defaultdict(list)
+        for entry in await self.current_all():
+            grouped[entry.state.key].append(entry)
+
+        repairs: list[OperationalContextRepair] = []
+        for key in sorted(grouped):
+            entries = grouped[key]
+            if len(entries) < 2:
+                continue
+            kept = max(entries, key=_repair_rank)
+            stale = tuple(
+                sorted(
+                    (entry for entry in entries if entry.page_id != kept.page_id),
+                    key=lambda entry: entry.page_id,
+                )
+            )
+            supersedes = tuple(
+                dict.fromkeys((*kept.supersedes, *(entry.page_id for entry in stale)))
+            )
+            await self.notion.update_page(
+                kept.page_id,
+                {
+                    self.props.supersedes: {
+                        "relation": [{"id": page_id} for page_id in supersedes]
+                    }
+                },
+            )
+            for entry in stale:
+                await self._retire(entry.page_id)
+            repairs.append(
+                OperationalContextRepair(
+                    key=key,
+                    kept_page_id=kept.page_id,
+                    superseded_page_ids=tuple(entry.page_id for entry in stale),
+                )
+            )
+        return tuple(repairs)
+
     async def _query_current(
         self, identity_filter: dict[str, Any]
     ) -> tuple[OperationalContextEntry, ...]:
@@ -307,7 +362,7 @@ class NotionOperationalContextRepository:
         ):
             for predecessor in current:
                 if predecessor != exact[0]:
-                    await self._mark_superseded(predecessor.page_id)
+                    await self._retire(predecessor.page_id)
             return exact[0]
         if len(current) > 1:
             raise OperationalContextVersionConflict(
@@ -342,13 +397,13 @@ class NotionOperationalContextRepository:
         )
         created = self._map_page(page)
         if actual is not None:
-            await self._mark_superseded(actual.page_id)
+            await self._retire(actual.page_id)
         return created
 
-    async def _mark_superseded(self, page_id: str) -> None:
+    async def _retire(self, page_id: str) -> None:
         await self.notion.update_page(
             page_id,
-            {self.props.status: {"status": {"name": ProfileStatus.SUPERSEDED.value}}},
+            {self.props.status: {"status": {"name": ProfileStatus.ARCHIVED.value}}},
         )
 
     @staticmethod
@@ -369,3 +424,15 @@ class NotionOperationalContextRepository:
             raise OperationalContextVersionConflict(
                 "Operational context was edited after reconciliation"
             )
+
+
+def _repair_rank(entry: OperationalContextEntry) -> tuple[int, int, float, float, str]:
+    """Rank business freshness before Notion edit metadata."""
+
+    return (
+        entry.state.last_observed_on.toordinal(),
+        entry.state.occurrence_count,
+        entry.last_edited_at.timestamp() if entry.last_edited_at is not None else -1.0,
+        entry.created_at.timestamp() if entry.created_at is not None else -1.0,
+        entry.page_id,
+    )

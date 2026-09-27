@@ -45,7 +45,8 @@ def build_coordinator_graph(
                         "Route the newest message to exactly one capability. "
                         "finance handles expenses, income, budgets, affordability, savings, "
                         "bank balance, financial rules, recurring tasks, and follow-ups to "
-                        "those discussions. general handles "
+                        "those discussions. general handles operational maintenance, including "
+                        "duplicate current operational versions and expense-checkup repair, plus "
                         "everything else. Preserve the active capability for short or ambiguous "
                         "follow-ups unless the user clearly changes topic."
                     )

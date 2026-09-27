@@ -6,10 +6,12 @@ from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
+import pytest
 from financial_agent.domain.operational_context import (
     OperationalContextKind,
     OperationalContextLifecycle,
     OperationalContextState,
+    OperationalContextVersionConflict,
 )
 from financial_agent.integrations.notion_operational_context import (
     NotionOperationalContextRepository,
@@ -147,7 +149,7 @@ def test_repository_versions_current_page_with_optimistic_predecessor() -> None:
     assert notion.updated == [
         {
             "page_id": "old-page",
-            "properties": {"Status": {"status": {"name": "Superseded"}}},
+            "properties": {"Status": {"status": {"name": "Archived"}}},
         }
     ]
 
@@ -176,6 +178,50 @@ def test_repository_retry_finishes_supersession_without_duplicate_create() -> No
     assert notion.updated == [
         {
             "page_id": "old-page",
-            "properties": {"Status": {"status": {"name": "Superseded"}}},
+            "properties": {"Status": {"status": {"name": "Archived"}}},
         }
+    ]
+
+
+def test_repository_repairs_ambiguous_current_versions_for_general_agent() -> None:
+    initial = state()
+    latest = replace(
+        initial,
+        last_observed_on=date(2026, 8, 21),
+        occurrence_count=2,
+        current_signal="projection_deviation:50",
+        band=Decimal("50"),
+    )
+    notion = FakeNotion(
+        {
+            "profile": [
+                page("stale-page", initial),
+                page("latest-page", latest),
+            ]
+        }
+    )
+    repository = NotionOperationalContextRepository(notion, "profile")
+
+    with pytest.raises(
+        OperationalContextVersionConflict,
+        match="Multiple current operational versions",
+    ):
+        asyncio.run(repository.save_version(latest, None))
+
+    repairs = asyncio.run(repository.repair_duplicate_current_versions())
+
+    assert repairs[0].key == latest.key
+    assert repairs[0].kept_page_id == "latest-page"
+    assert repairs[0].superseded_page_ids == ("stale-page",)
+    assert notion.updated[-2:] == [
+        {
+            "page_id": "latest-page",
+            "properties": {
+                "Supersedes": {"relation": [{"id": "stale-page"}]}
+            },
+        },
+        {
+            "page_id": "stale-page",
+            "properties": {"Status": {"status": {"name": "Archived"}}},
+        },
     ]
