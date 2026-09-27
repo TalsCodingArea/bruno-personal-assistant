@@ -7,6 +7,7 @@ from decimal import Decimal
 from financial_agent.domain.models import (
     CategorySuggestion,
     CategoryUpdateDraft,
+    ExpenseSettlementTotals,
     PlannedExpenseDraft,
     Transaction,
 )
@@ -43,6 +44,11 @@ class FinanceQueryService:
         transactions = await self.reader.transactions(start, end)
         budgets = await self.reader.budgets(start)
         return monthly_category_summary(transactions, start, budgets=budgets)
+
+    async def expense_settlement(self, month: date) -> ExpenseSettlementTotals:
+        """Return authoritative cash-settlement totals for one expense month."""
+
+        return await self.reader.expense_settlement(month.replace(day=1))
 
     async def uncategorized_transactions(self, month: date) -> tuple[Transaction, ...]:
         start, end = month_bounds(month)

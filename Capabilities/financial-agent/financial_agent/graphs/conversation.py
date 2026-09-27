@@ -113,12 +113,18 @@ Do not create a recurring Budget page merely because a one-time expense
 occurred. Distinguish recurring behavior, budget overruns, variable
 spending, and apparent outliers. Explain material adjustments.
 
-For bank-account questions and every monthly budget plan, call get_account_outlook when that
-tool is available. It distinguishes cash settlement from budget spending: Amount is the raw
-charge used to predict the next credit-card debit, while Final is Tal's budget-authoritative
-share and gift-card purchases therefore contribute zero to budgets. Expected reimbursement is
-exactly half the sum of Mutual Formula for expenses tagged Mutual 👫🏻. The outlook combines the
-latest imported bank balance with expected salary, rent, card debit, and reimbursement.
+For a current reimbursement question, always call get_current_reimbursement. For a current
+credit-card debt or next card-deduction question, always call get_current_credit_debt. Never
+recalculate either value yourself, never use Final for credit debt, and never report credit debt
+net of reimbursement: they are separate cash movements. Reimbursement is exactly half the sum
+of Mutual Formula for expenses tagged Mutual 👫🏻. Credit debt is the raw Amount of credit-card
+expenses for the expense month and is deducted from the bank account in the following month.
+Final remains Tal's budget-authoritative share; gift-card purchases therefore contribute zero
+to budgets.
+
+For broader bank-account questions and every monthly budget plan, call get_account_outlook when
+that tool is available. The outlook combines the latest imported bank balance with expected
+salary, rent, the separate card debit, and reimbursement.
 
 Treat cashflow.minimum_available_balance and cashflow.savings_sweep_surplus as controlled
 Financial Rules whose Statement is one non-negative JSON number. Use the minimum as a hard

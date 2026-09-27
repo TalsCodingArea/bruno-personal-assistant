@@ -10,8 +10,13 @@ case-sensitive.
 - Mandatory scope: every query includes `Tag contains "Tal 👨🏻"`
 - Agent-facing budget fields: `Description`, `Date`, `Category`, `Sub Category`, `Payment Method`, `Final`
 - `Final` is the authoritative budget value (`Amount × Actual`)
-- Account settlement reads raw `Amount` for credit payments and `Mutual Formula` for rows tagged
-  `Mutual 👫🏻`; expected reimbursement is `sum(Mutual Formula) / 2`
+- `get_current_credit_debt` reads raw `Amount` for credit payments in the expense month; this is
+  the card debt deducted from the bank account in the following month and is never based on
+  `Final`
+- `get_current_reimbursement` reads `Mutual Formula` for rows tagged `Mutual 👫🏻`; expected
+  reimbursement is `sum(Mutual Formula) / 2`
+- Credit debt and reimbursement are separate cash movements; neither replaces budget spending,
+  whose authoritative value remains `Final`
 - Gift-card purchases remain excluded from budgets because their authoritative `Final` is zero
 
 Current type assumptions to verify against the live schema:

@@ -151,6 +151,8 @@ Read tools:
 - `get_budget_status`
 - `forecast_month_end`
 - `get_upcoming_planned_expenses`
+- `get_current_reimbursement`
+- `get_current_credit_debt`
 - `get_budget_planning_context`
 - `get_bank_movements`
 - `get_account_outlook`

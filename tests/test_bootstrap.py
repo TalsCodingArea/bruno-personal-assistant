@@ -20,6 +20,8 @@ def test_bootstrap_connects_safe_tools_to_real_notion_sdk_without_requesting_dat
     application = build_finance_application(settings)
 
     assert {tool.name for tool in application.tools.conversation} == {
+        "get_current_reimbursement",
+        "get_current_credit_debt",
         "get_monthly_summary",
         "get_uncategorized_transactions",
         "suggest_categories",

@@ -2,9 +2,11 @@
 
 import asyncio
 from collections.abc import Iterator
+from datetime import date
 from typing import Any
 
 import pytest
+from financial_agent.domain.models import ExpenseSettlementTotals
 from financial_agent.integrations.expense_monitor_ledger import InMemoryExpenseMonitorLedger
 from financial_agent.integrations.notion_profile import NotionFinancialProfileRepository
 from financial_agent.services.budget_planning import BudgetPlanningService
@@ -35,6 +37,8 @@ def test_catalog_contains_only_requested_read_and_draft_tools() -> None:
     catalog = build_tool_catalog(FinanceQueryService(FakeFinanceReader()))
 
     assert {tool.name for tool in catalog.read} == {
+        "get_current_reimbursement",
+        "get_current_credit_debt",
         "get_monthly_summary",
         "get_uncategorized_transactions",
         "suggest_categories",
@@ -52,6 +56,45 @@ def test_catalog_contains_only_requested_read_and_draft_tools() -> None:
         "set_monthly_budget",
         "create_financial_rule",
     }.intersection(tool.name for tool in catalog.conversation)
+
+
+def test_settlement_tools_return_distinct_authoritative_amounts() -> None:
+    class SettlementFinance(FakeFinanceReader):
+        async def expense_settlement(self, month: date) -> ExpenseSettlementTotals:
+            return ExpenseSettlementTotals(month, "1200", "500", "250")
+
+    catalog = build_tool_catalog(FinanceQueryService(SettlementFinance()))
+    reimbursement = next(
+        tool for tool in catalog.read if tool.name == "get_current_reimbursement"
+    )
+    credit_debt = next(
+        tool for tool in catalog.read if tool.name == "get_current_credit_debt"
+    )
+
+    async def run() -> tuple[object, object]:
+        return (
+            await reimbursement.ainvoke({"month": "2026-08"}),
+            await credit_debt.ainvoke({"month": "2026-08"}),
+        )
+
+    reimbursement_result, credit_debt_result = asyncio.run(run())
+
+    assert reimbursement_result == {
+        "expense_month": "2026-08-01",
+        "expected_in_month": "2026-09-01",
+        "amount": "250.00",
+        "mutual_formula_total": "500.00",
+        "basis": (
+            'sum of "Mutual Formula" for expenses tagged "Mutual 👫🏻", '
+            "divided by 2"
+        ),
+    }
+    assert credit_debt_result == {
+        "expense_month": "2026-08-01",
+        "deducted_in_month": "2026-09-01",
+        "amount": "1200.00",
+        "basis": 'sum of raw "Amount" for credit-card expenses, not "Final"',
+    }
 
 
 def test_monitoring_context_tool_is_read_only_and_opt_in() -> None:

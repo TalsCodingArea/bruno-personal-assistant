@@ -43,8 +43,50 @@ def _month(value: str) -> date:
     return date.fromisoformat(f"{value}-01")
 
 
+def _next_month(month: date) -> date:
+    return (
+        date(month.year + 1, 1, 1)
+        if month.month == 12
+        else date(month.year, month.month + 1, 1)
+    )
+
+
 def build_read_tools(service: FinanceQueryService) -> list[BaseTool]:
     """Build only tools that read and calculate without proposing mutations."""
+
+    @tool("get_current_reimbursement", args_schema=MonthInput)
+    async def get_current_reimbursement(month: str) -> JsonValue:
+        """Get Mutual reimbursement for an expense month; never calculate it manually."""
+
+        expense_month = _month(month)
+        settlement = await service.expense_settlement(expense_month)
+        return jsonable(
+            {
+                "expense_month": expense_month,
+                "expected_in_month": _next_month(expense_month),
+                "amount": settlement.expected_reimbursement,
+                "mutual_formula_total": settlement.mutual_formula_total,
+                "basis": (
+                    'sum of "Mutual Formula" for expenses tagged "Mutual 👫🏻", '
+                    "divided by 2"
+                ),
+            }
+        )
+
+    @tool("get_current_credit_debt", args_schema=MonthInput)
+    async def get_current_credit_debt(month: str) -> JsonValue:
+        """Get the raw credit-card debt due after an expense month; never use Final."""
+
+        expense_month = _month(month)
+        settlement = await service.expense_settlement(expense_month)
+        return jsonable(
+            {
+                "expense_month": expense_month,
+                "deducted_in_month": _next_month(expense_month),
+                "amount": settlement.credit_charges,
+                "basis": 'sum of raw "Amount" for credit-card expenses, not "Final"',
+            }
+        )
 
     @tool("get_monthly_summary", args_schema=MonthInput)
     async def get_monthly_summary(month: str) -> JsonValue:
@@ -119,6 +161,8 @@ def build_read_tools(service: FinanceQueryService) -> list[BaseTool]:
             return {"status": "schema_not_configured", "message": str(exc)}
 
     return [
+        get_current_reimbursement,
+        get_current_credit_debt,
         get_monthly_summary,
         get_uncategorized_transactions,
         suggest_categories,
