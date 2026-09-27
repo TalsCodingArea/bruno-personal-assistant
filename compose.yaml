@@ -1,0 +1,72 @@
+name: bruno
+
+services:
+  bruno:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bruno-personal-assistant:local
+    env_file:
+      - .env
+    environment:
+      FINANCE_AGENT_ENVIRONMENT: production
+      BRUNO_CHECKPOINT_PATH: /app/data/bruno/checkpoints.sqlite3
+      BRUNO_SCHEDULER_PATH: /app/data/bruno/scheduler.sqlite3
+      FINANCE_AGENT_EXPENSE_MONITOR_LEDGER_PATH: /app/data/finance/expense-monitor.sqlite3
+      BANK_ACCOUNT_INBOX: /imports
+      BANK_ACCOUNT_LEDGER_PATH: /app/data/bank-account/imports.sqlite3
+    volumes:
+      - bruno-data:/app/data
+      - type: bind
+        source: ${BANK_ACCOUNT_INBOX_HOST:-./bank-inbox}
+        target: /imports
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 45s
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  bank-importer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bruno-personal-assistant:local
+    command: ["python", "-m", "bank_account", "daemon"]
+    env_file:
+      - .env
+    environment:
+      BANK_ACCOUNT_INBOX: /imports
+      BANK_ACCOUNT_LEDGER_PATH: /app/data/bank-account/imports.sqlite3
+    volumes:
+      - bruno-data:/app/data
+      - type: bind
+        source: ${BANK_ACCOUNT_INBOX_HOST:-./bank-inbox}
+        target: /imports
+    init: true
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  bruno-data:
+    name: bruno-data

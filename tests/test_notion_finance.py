@@ -4,9 +4,10 @@ import asyncio
 from datetime import date
 from decimal import Decimal
 
-from app.domain.models import ProgressiveMode
-from app.integrations.notion_finance import NotionFinanceReader
-from app.integrations.notion_schema import FinanceDataSources
+from financial_agent.domain.models import ProgressiveMode
+from financial_agent.integrations.notion_finance import NotionFinanceReader
+from financial_agent.integrations.notion_schema import FinanceDataSources
+
 from tests.fakes import FakeNotion, budget_page, expense_page
 
 
@@ -115,6 +116,43 @@ def test_reader_maps_progressive_and_notion_percentage_volatility() -> None:
     assert result[0].progressive is ProgressiveMode.ACCUMULATED
     assert result[0].volatility_percent == Decimal("80.00")
     assert notion.queries[0]["filter_properties"] == ()
+
+
+def test_expense_settlement_uses_raw_credit_and_half_mutual_formula() -> None:
+    sources = FinanceDataSources("expenses", "income", "budgets", "future", "profile")
+    credit = expense_page(
+        "credit", description="Shared dinner", date_="2026-08-03",
+        category="Food", subcategory="Restaurant", final=100,
+    )
+    credit["properties"].update(
+        {
+            "Amount": {"type": "number", "number": 300},
+            "Tag": {"type": "multi_select", "multi_select": [{"name": "Mutual 👫🏻"}]},
+            "Mutual Formula": {
+                "type": "formula",
+                "formula": {"type": "number", "number": 200},
+            },
+        }
+    )
+    gift_card = expense_page(
+        "gift", description="Gift purchase", date_="2026-08-04",
+        category="Fun", subcategory="Games", final=0,
+    )
+    gift_card["properties"].update(
+        {
+            "Amount": {"type": "number", "number": 500},
+            "Payment Method": {"type": "select", "select": {"name": "Gift Card"}},
+        }
+    )
+    notion = FakeNotion({sources.expenses: [credit, gift_card]})
+
+    result = asyncio.run(
+        NotionFinanceReader(notion, sources=sources).expense_settlement(date(2026, 8, 1))
+    )
+
+    assert result.credit_charges == Decimal("300.00")
+    assert result.mutual_formula_total == Decimal("200.00")
+    assert result.expected_reimbursement == Decimal("100.00")
 
 
 def test_reader_preserves_precise_volatility_and_mutation_metadata() -> None:

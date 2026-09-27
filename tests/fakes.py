@@ -2,10 +2,17 @@
 
 from collections.abc import Mapping, Sequence
 from datetime import date
+from pathlib import Path
 from typing import Any
 
-from app.domain.models import Budget, Income, PlannedExpense, Transaction
-from app.integrations.notion import NotionObject
+from financial_agent.domain.models import (
+    Budget,
+    ExpenseSettlementTotals,
+    Income,
+    PlannedExpense,
+    Transaction,
+)
+from financial_agent.integrations.notion import NotionObject
 
 
 class FakeNotion:
@@ -16,6 +23,7 @@ class FakeNotion:
         self.queries: list[dict[str, Any]] = []
         self.created: list[dict[str, Any]] = []
         self.updated: list[dict[str, Any]] = []
+        self.uploaded: list[dict[str, Any]] = []
 
     async def query_all(
         self,
@@ -47,6 +55,9 @@ class FakeNotion:
 
     async def retrieve_data_source(self, data_source_id: str) -> NotionObject:
         return {"id": data_source_id, "properties": {"Name": {"type": "title"}}}
+
+    async def resolve_database_data_source(self, database_id: str) -> str:
+        return f"{database_id}-source"
 
     async def retrieve_page_text(self, page_id: str, *, max_chars: int) -> str:
         return f"Content for {page_id}"[:max_chars]
@@ -95,6 +106,22 @@ class FakeNotion:
         call = {"page_id": page_id, "properties": dict(properties)}
         self.updated.append(call)
         return {"id": page_id, "properties": dict(properties)}
+
+    async def upload_file(
+        self,
+        path: Path,
+        *,
+        filename: str | None = None,
+        content_type: str = "application/octet-stream",
+    ) -> str:
+        self.uploaded.append(
+            {
+                "path": path,
+                "filename": filename,
+                "content_type": content_type,
+            }
+        )
+        return f"upload-{len(self.uploaded)}"
 
 
 def expense_page(
@@ -207,3 +234,6 @@ class FakeFinanceReader:
             item for item in self.planned_rows if start_date <= item.due_date <= end_date
         )
         return rows[:limit] if limit is not None else rows
+
+    async def expense_settlement(self, month: date) -> ExpenseSettlementTotals:
+        return ExpenseSettlementTotals(month, "0", "0", "0")

@@ -4,10 +4,10 @@ import asyncio
 from datetime import UTC, datetime
 
 import pytest
+from financial_agent.domain.profile import FinancialProfileUpdateDraft, ProfileKind
+from financial_agent.integrations.notion_profile import NotionFinancialProfileRepository
+from financial_agent.services.profile import FinancialProfileService, ProfileVersionConflict
 
-from app.domain.profile import FinancialProfileUpdateDraft, ProfileKind
-from app.integrations.notion_profile import NotionFinancialProfileRepository
-from app.services.profile import FinancialProfileService, ProfileVersionConflict
 from tests.fakes import FakeNotion
 
 

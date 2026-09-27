@@ -3,10 +3,10 @@
 import json
 import os
 
-from app.config import ReasoningEffort, Settings
-from app.integrations.openai_budget_review import BudgetPreferenceReviewOutput
-from app.integrations.openai_model import build_openai_chat_model
-from app.observability import configure_langsmith_environment
+from financial_agent.config import ReasoningEffort, Settings
+from financial_agent.integrations.openai_budget_review import BudgetPreferenceReviewOutput
+from financial_agent.integrations.openai_model import build_openai_chat_model
+from financial_agent.observability import configure_langsmith_environment
 
 
 def test_openai_model_uses_terra_responses_api_and_medium_reasoning() -> None:

@@ -5,16 +5,16 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
-
-from app.domain.budget_planning import (
+from financial_agent.domain.budget_planning import (
     BudgetCapBasis,
     BudgetPageDraft,
     BudgetPlanPartialFailure,
     BudgetPlanPurpose,
 )
-from app.domain.models import ProgressiveMode
-from app.integrations.notion_budget_planning import NotionBudgetPlanCreationRepository
-from app.services.budget_planning import BudgetPlanningService
+from financial_agent.domain.models import ProgressiveMode
+from financial_agent.integrations.notion_budget_planning import NotionBudgetPlanCreationRepository
+from financial_agent.services.budget_planning import BudgetPlanningService
+
 from tests.fakes import FakeFinanceReader, FakeNotion
 from tests.test_budget_planning import Rules
 

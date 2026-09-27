@@ -4,13 +4,13 @@ import asyncio
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
-from app.domain.expense_monitoring import ExpenseMonitorMode, ExpenseSeverity
-from app.domain.models import Budget, Income, ProgressiveMode, Transaction
-from app.domain.monitoring import MonitoringInputSnapshot, MonitoringPolicy
-from app.graphs.expense_monitor import build_expense_monitor_graph
-from app.integrations.expense_monitor_ledger import InMemoryExpenseMonitorLedger
-from app.integrations.expense_notifications import TraceExpenseAlertNotifier
-from app.services.expense_monitor_workflow import ExpenseMonitorWorkflowService
+from financial_agent.domain.expense_monitoring import ExpenseMonitorMode, ExpenseSeverity
+from financial_agent.domain.models import Budget, Income, ProgressiveMode, Transaction
+from financial_agent.domain.monitoring import MonitoringInputSnapshot, MonitoringPolicy
+from financial_agent.graphs.expense_monitor import build_expense_monitor_graph
+from financial_agent.integrations.expense_monitor_ledger import InMemoryExpenseMonitorLedger
+from financial_agent.integrations.expense_notifications import TraceExpenseAlertNotifier
+from financial_agent.services.expense_monitor_workflow import ExpenseMonitorWorkflowService
 
 MONTH = date(2026, 8, 1)
 AS_OF = date(2026, 8, 20)

@@ -4,7 +4,7 @@ import asyncio
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
-from app.domain.expense_monitoring import (
+from financial_agent.domain.expense_monitoring import (
     AlertState,
     ExpenseAlertDraft,
     ExpenseChangedEvent,
@@ -13,7 +13,7 @@ from app.domain.expense_monitoring import (
     MonitoringDecision,
     ProcessedExpenseSnapshot,
 )
-from app.integrations.expense_monitor_ledger import SQLiteExpenseMonitorLedger
+from financial_agent.integrations.expense_monitor_ledger import SQLiteExpenseMonitorLedger
 
 NOW = datetime(2026, 8, 20, 12, tzinfo=UTC)
 MONTH = date(2026, 8, 1)

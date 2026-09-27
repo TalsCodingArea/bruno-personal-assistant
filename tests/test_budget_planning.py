@@ -5,18 +5,22 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
-
-from app.domain.budget_planning import (
+from financial_agent.domain.budget_planning import (
     BudgetCapBasis,
     BudgetPageDraft,
     BudgetPlanCreationResult,
     BudgetPlanningFreshnessError,
     BudgetPlanPurpose,
     CreatedBudgetPage,
+    ExistingTargetBudgetPagesError,
 )
-from app.domain.models import Budget, Income, PlannedExpense, ProgressiveMode
-from app.domain.profile import FinancialProfileEntry, ProfileKind, ProfileStatus
-from app.services.budget_planning import BudgetPlanningService
+from financial_agent.domain.models import Budget, Income, PlannedExpense, ProgressiveMode
+from financial_agent.domain.profile import FinancialProfileEntry, ProfileKind, ProfileStatus
+from financial_agent.services.budget_planning import BudgetPlanningService
+from financial_agent.tools.draft.budget import build_budget_draft_tools
+from financial_agent.tools.read.budget import build_budget_read_tools
+from financial_agent.tools.write.budget import build_budget_write_tools
+
 from tests.fakes import FakeFinanceReader
 
 TARGET = date(2026, 9, 1)
@@ -266,7 +270,9 @@ def test_plan_rejects_cap_overrun_duplicate_pages_and_silent_future_shortfall() 
         budget("sep-rent", "Rent", "1000", TARGET),
     )
     changed_context = asyncio.run(service.planning_context(TARGET))
-    with pytest.raises(ValueError, match="already exists"):
+    with pytest.raises(
+        ExistingTargetBudgetPagesError, match="already exists"
+    ) as caught:
         service.draft_plan(
             changed_context,
             (plan_items()[0],),
@@ -274,6 +280,63 @@ def test_plan_rejects_cap_overrun_duplicate_pages_and_silent_future_shortfall() 
             cap_basis=BudgetCapBasis.USER_PROVIDED,
             cap_rationale="Duplicate target page.",
         )
+    assert caught.value.subcategories == ("Rent",)
+
+
+@pytest.mark.parametrize(
+    "tool_factory",
+    (build_budget_draft_tools, build_budget_write_tools),
+)
+def test_budget_tools_return_existing_pages_as_agent_actionable_result(
+    tool_factory,
+) -> None:  # type: ignore[no-untyped-def]
+    service, finance, repository = service_and_finance()
+    finance.budget_rows = (
+        *finance.budget_rows,
+        budget("sep-bills", "Bills 🧾", "200", TARGET),
+    )
+    context = asyncio.run(service.planning_context(TARGET))
+    (tool,) = tool_factory(service)
+
+    result = asyncio.run(
+        tool.ainvoke(
+            {
+                "month": "2026-09",
+                "source_fingerprint": context.source_fingerprint,
+                "financial_cap": "2200",
+                "cap_basis": "user_provided",
+                "cap_rationale": "Use the current income as the cap.",
+                "income_assumption": "2200",
+                "items": [
+                    {
+                        "subcategory": "Bills 🧾",
+                        "amount": "200",
+                        "progressive": "Discrete",
+                        "volatility_percent": "0",
+                        "purpose": "regular",
+                        "rationale": "Monthly bills reserve.",
+                    }
+                ],
+            }
+        )
+    )
+
+    assert result["status"] == "already_exists"
+    assert result["existing_subcategories"] == ["Bills 🧾"]
+    assert result["recovery"] == {
+        "tool": "get_budget_planning_context",
+        "arguments": {"month": "2026-09"},
+        "current_pages_field": "existing_target_budgets",
+    }
+    assert "Do not recreate" in result["message"]
+    assert "existing_target_budgets as the current pages" in result["next_action"]
+    assert "only subcategories that do not yet have a page" in result["next_action"]
+    (context_tool,) = build_budget_read_tools(service)
+    refreshed = asyncio.run(context_tool.ainvoke({"month": "2026-09"}))
+    assert [page["subcategory"] for page in refreshed["existing_target_budgets"]] == [
+        "Bills 🧾"
+    ]
+    assert repository.calls == []
 
 
 def test_apply_rechecks_sources_and_recognizes_idempotently_created_pages() -> None:

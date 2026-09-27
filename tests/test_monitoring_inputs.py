@@ -5,14 +5,14 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
-
-from app.domain.models import Budget, Income, ProgressiveMode, Transaction
-from app.domain.profile import FinancialProfileEntry, ProfileKind, ProfileStatus
-from app.services.monitoring_inputs import DailyMonitoringInputService
-from app.services.monitoring_policy import (
+from financial_agent.domain.models import Budget, Income, ProgressiveMode, Transaction
+from financial_agent.domain.profile import FinancialProfileEntry, ProfileKind, ProfileStatus
+from financial_agent.services.monitoring_inputs import DailyMonitoringInputService
+from financial_agent.services.monitoring_policy import (
     MonitoringPolicyConfigurationError,
     compile_monitoring_policy,
 )
+
 from tests.fakes import FakeFinanceReader
 
 

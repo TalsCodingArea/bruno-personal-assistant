@@ -3,15 +3,15 @@
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
-from app.domain.expense_monitoring import (
+from financial_agent.domain.expense_monitoring import (
     AlertState,
     ExpenseChangedEvent,
     ExpenseEventType,
     ExpenseSeverity,
 )
-from app.domain.models import Budget, Income, ProgressiveMode, Transaction
-from app.domain.monitoring import MonitoringInputSnapshot, MonitoringPolicy
-from app.services.expense_monitoring import (
+from financial_agent.domain.models import Budget, Income, ProgressiveMode, Transaction
+from financial_agent.domain.monitoring import MonitoringInputSnapshot, MonitoringPolicy
+from financial_agent.services.expense_monitoring import (
     calculate_expense_impact,
     classify_expense_impact,
     draft_budget_reallocation,

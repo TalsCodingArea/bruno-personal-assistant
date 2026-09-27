@@ -1,188 +1,204 @@
-# Finance Agent
+# Bruno Personal Assistant
 
-A personal finance agent built with LangGraph and Notion.
+Bruno is the outer personal-assistant runtime. It owns Telegram channels, streaming, logging,
+receipt handling, trusted automations, durable routing context, and capability selection.
+Financial reasoning is delegated to the finance capability under
+[`Capabilities/financial-agent`](Capabilities/financial-agent/README.md).
 
-The graphs can read financial data, perform deterministic calculations, manage compact
-conversation context, and version durable financial preferences after explicit approval. Start
-with the [architecture walkthrough](docs/architecture.md), [context walkthrough](docs/context-management.md),
-[interaction profile walkthrough](docs/interaction-profile.md), and the
-[Notion schema contract](docs/notion-schema.md). Daily runtime memory is described in the
-[operational context walkthrough](docs/operational-context.md).
-Guarded automatic writes are described in the
-[budget mutation walkthrough](docs/budget-mutation.md).
-The executable daily orchestration is described in the
-[daily budget graph walkthrough](docs/daily-budget-workflow.md).
-The independent event workflow is described in the
-[expense monitor walkthrough](docs/expense-monitoring.md).
-Agent-directed Budget page creation is described in the
-[budget planning walkthrough](docs/budget-planning.md).
+The dependency direction is intentional: `bruno` imports `financial_agent`, while the
+capability never imports `bruno`. Future capabilities can be added beside the financial agent
+without sharing a generic Python package name.
 
-## Setup
+Bank-account movement ingestion is intentionally separate from the agent runtime under
+[`bank_account`](bank_account/README.md). It reads bank Excel exports from a dedicated inbox,
+writes them to the Bank Movement Notion database, and removes a file only after a complete,
+idempotent import.
 
-Requirements: Python 3.11+ and preferably [`uv`](https://docs.astral.sh/uv/).
+```text
+Bruno/
+├── bruno/                         # Telegram shell and capability coordinator
+├── bank_account/                  # Standalone Excel-to-Notion bank importer
+├── Capabilities/
+│   └── financial-agent/
+│       ├── financial_agent/       # Finance graph, services, integrations, and tools
+│       ├── docs/
+│       ├── langgraph.json          # Graphs exposed by this capability
+│       └── README.md
+├── tests/
+└── pyproject.toml
+```
+
+## Runtime shape
+
+```text
+Telegram channel
+      |
+      v
+one-node capability selector ----> general (placeholder)
+      |
+      +---------------------------> finance conversation graph
+
+receipts/automations --> trusted finance automation tools --> Notion
+                                      |
+                                      v
+                     exact expense-event analysis +
+                          10-minute trailing-edge check
+                                      |
+                                      v
+                  budget + bank-settlement analysis
+                                      |
+                                      v
+                   immediate critical or next-chat notice
+```
+
+The selector has its own durable LangGraph thread per Telegram chat. Finance has a separate
+thread, so its checkpoints and approval interrupts survive routing turns. The general
+capability is intentionally a placeholder until another capability graph is connected.
+
+## Run
+
+Create the environment from the Bruno root, copy `.env.example`, and fill in the Telegram,
+OpenAI, and Notion values:
 
 ```bash
-uv sync --extra dev
+python -m venv .venv
+.venv/bin/python -m pip install -e '.[dev]'
 cp .env.example .env
 ```
 
-Add the Notion integration token to `.env`:
-
-```dotenv
-FINANCE_AGENT_NOTION_TOKEN=secret_...
-FINANCE_AGENT_CURRENCY=ILS
-FINANCE_AGENT_EXPENSES_DATA_SOURCE_ID=...
-FINANCE_AGENT_INCOME_DATA_SOURCE_ID=...
-FINANCE_AGENT_BUDGETS_DATA_SOURCE_ID=...
-FINANCE_AGENT_FUTURE_EXPENSES_DATA_SOURCE_ID=...
-FINANCE_AGENT_FINANCIAL_RULES_DATA_SOURCE_ID=...
-```
-
-The integration must be shared with each configured Notion data source. The chat model is
-injected into the graph factory. The Studio entrypoint uses `gpt-5.6-terra` with medium
-reasoning through OpenAI's Responses API.
-
-ILS is a strict application policy. Unlabeled amounts from finance tools are ILS, and the
-assistant renders user-facing money with `₪`, not `$`.
-
-## LangSmith Studio
-
-The development extra includes LangGraph's in-memory Agent Server. Configure non-empty
-`OPENAI_API_KEY` and `LANGSMITH_API_KEY` values, then run:
+Then run:
 
 ```bash
-.venv/bin/langgraph dev
+.venv/bin/python -m bruno.app
 ```
 
-The server prints the local API, documentation, and Studio URLs. Select the `finance_agent`
-graph and create a thread. When `apply_financial_profile_update` is called, the run pauses with
-an approval payload; resume it with `{"action": "approve"}` or `{"action": "reject"}`.
+## Run continuously with Docker
 
-Select `daily_budget_monitor` to inspect one standalone daily run and submit an ISO date, for
-example `{"as_of": "2026-08-27"}`. This graph uses live Notion data and can change current-month
-budgets only when the automatic-adjustment Financial Rule is explicitly enabled.
+The production Compose service runs the Telegram bot as a non-root process, restarts it after
+an unexpected exit, retries transient Telegram bootstrap failures, limits Docker log growth,
+and allows a graceful 45-second shutdown. The container filesystem is read-only except for
+temporary receipt processing and the `bruno-data` volume.
 
-Select `expense_monitor` to inspect one expense event. Its default `shadow` mode persists a
-grounded decision and proposed alert in its separate operational ledger, but sends no external
-notification and performs no Budget DB mutation.
+Create `.env` from the example, fill in its secrets and IDs, then build and start Bruno:
 
-Studio/Agent Server owns checkpoint persistence. `app/graphs/studio.py` deliberately compiles
-the graph without the test application's checkpointer.
+```bash
+cp .env.example .env
+docker compose up -d --build
+```
+
+Useful operating commands:
+
+```bash
+docker compose ps
+docker compose logs --follow --tail=100 bruno
+docker compose restart bruno
+docker compose down
+```
+
+`docker compose down` preserves the named volume. It contains the conversation checkpoints,
+recurring tasks, deferred notices, and expense-monitor ledger. Do not run
+`docker compose down --volumes` unless you intentionally want to delete that state. Back up the
+`bruno-data` volume before host or Docker migrations.
+
+On a Mac mini, configure macOS not to sleep automatically and configure Docker Desktop to start
+at login; Compose can restart Bruno only while the Docker engine itself is running. See the
+[Mac Mini deployment guide](docs/mac-mini-deployment.md) for secure first-time setup and the
+host-side update workflow.
+
+## Test one capability in LangGraph Studio
+
+Start the in-memory LangGraph development server for the financial capability:
+
+```bash
+.venv/bin/python -m bruno capability-dev financial-agent
+```
+
+The server prints its API, documentation, and LangSmith Studio URLs. Telegram credentials are
+not used by this command. Standard `langgraph dev` options are forwarded after the capability
+name, for example:
+
+```bash
+.venv/bin/python -m bruno capability-dev financial-agent --port 2025 --no-browser
+```
+
+Each future folder under `Capabilities/` becomes independently testable by adding its own
+`langgraph.json`; the Bruno command discovers configurations instead of maintaining a central
+graph list.
+
+The four configured Telegram chats are allow-listed by exact chat ID:
+
+- personal assistant: capability routing and streamed finance conversations;
+- receipts: PDF receipt extraction, invoice upload, and expense creation;
+- automations: explicit JSON automation messages;
+- logs: best-effort operational errors.
+
+An existing Bruno-style automation payload remains accepted:
+
+```json
+{
+  "tool": "log_expense",
+  "args": {
+    "Description": "Coffee",
+    "Amount": 14.5,
+    "Date": "2026-08-31",
+    "Category": "Food",
+    "Timezone": "GMT+03:00"
+  }
+}
+```
+
+`Timezone` defaults to the fixed offset `GMT+03:00`. Timestamp inputs are converted to that
+offset before Bruno chooses the expense date.
+
+`check_expenses` may also be sent through the automation chat. It schedules a check rather
+than running immediately.
+
+When `new_bank_record` finishes importing an Excel export, the automations chat receives its
+normal import receipt and the personal-assistant chat receives a financial evaluation based on
+the refreshed Bank Movement, Expenses, Income, Budget, and Financial Rules data.
+
+## Expense check-up behavior
+
+Before creating an expense from a receipt, Bruno loads expenses from the receipt date. If an
+existing expense has exactly the same amount, Bruno adds the PDF to that expense regardless of
+the expense description or receipt vendor name. Otherwise Bruno creates a new expense.
+
+Every newly created receipt expense or `log_expense` call schedules the same trailing-edge check.
+A new expense within `BRUNO_EXPENSE_CHECKUP_DELAY_SECONDS` replaces the pending check, so a burst
+of expenses normally produces one analysis after ten quiet minutes.
+
+The check uses the finance agent's deterministic daily budget graph. It can react to:
+
+- actual category overspend;
+- a material projected overrun for an `Accumulated` budget;
+- a negative variable-expense reserve;
+- budgets exceeding income or missing income.
+- a projected bank balance below the configured post-settlement minimum;
+- a surplus large enough to sweep into savings.
+
+Every created expense also runs the exact expense-event graph immediately. Critical findings
+are sent at once; informational, watch, and warning findings are stored durably and surfaced on
+the next personal-assistant chat. The whole-budget debounce applies the same urgency policy.
+
+The personal assistant can create approval-gated recurring tasks from ordinary language. It
+stores the task prompt, five-field cron, and IANA timezone in `BRUNO_SCHEDULER_PATH`; the local
+scheduler executes due tasks through the same persistent finance conversation and sends their
+result to the originating chat.
+
+`Discrete` budgets are not pace-projected. Automatic budget changes use the graph's existing
+fresh-read, rollback-capable mutation path and occur only when the active Financial Rule
+`monitoring.automatic_budget_adjustments_enabled` has JSON value `true`. Otherwise Bruno sends
+the proposed warning without writing. A savings warning is emitted only for the residual gap
+that cannot be covered by remaining income or allowable budget reallocations.
+
+The debounce is process-local. Durable checkpoints preserve conversations, but a pending
+ten-minute timer does not survive a bot restart; move this timer to a durable job queue before
+running multiple Bruno replicas.
 
 ## Verify
 
 ```bash
-uv run pytest
-uv run ruff check .
-uv run mypy app
+.venv/bin/python -m pytest
+.venv/bin/python -m ruff check bruno bank_account Capabilities/financial-agent/financial_agent tests
+.venv/bin/python -m mypy bruno bank_account Capabilities/financial-agent/financial_agent
 ```
-
-## Layer map
-
-```text
-app/
-├── domain/             # Plain finance objects and Decimal-safe money
-├── integrations/       # notion-client adapter and Notion-to-domain mapping
-├── services/
-│   ├── calculations.py # Pure deterministic finance functions
-│   ├── budget_mutation.py # Fresh-read and preference-gated writes
-│   ├── budget_planning.py # Context, validation, and approved page creation
-│   ├── daily_budget_monitoring.py # Read-to-analysis daily report
-│   ├── finance_queries.py # Fetch + calculate use cases
-│   ├── profile.py      # Durable profile versioning rules
-│   ├── interaction.py  # Validated conversational preferences
-│   ├── monitoring_inputs.py # Read-only daily Notion snapshot loader
-│   ├── monitoring_policy.py # Financial Rules to monitoring policy
-│   ├── expense_monitoring.py # Pure event diff, impact, severity, alert, and draft rules
-│   ├── expense_monitor_workflow.py # Event reads, ledger/outbox, and delivery coordination
-│   ├── operational_context.py # Versioned runtime-context persistence
-│   ├── operational_reconciliation.py # Pure report reconciliation
-│   └── ports.py        # Finance and profile persistence interfaces
-├── tools/
-│   ├── read/           # Factual tools
-│   ├── draft/          # Non-persisting proposal tools
-│   └── write/          # Tools that interrupt for explicit approval
-├── graphs/
-│   ├── conversation.py  # Assistant loop with context management
-│   ├── daily_budget.py  # Standalone deterministic daily orchestration
-│   └── expense_monitor.py # Independent event-driven expense orchestration
-├── bootstrap.py         # Connect real dependencies
-└── api/                 # Reserved for the transport layer
-```
-
-## Deterministic finance functions
-
-- `monthly_category_summary`
-- `uncategorized_review`
-- `variable_spending_pool`
-- `planned_expense_monthly_allocation`
-- `month_end_forecast`
-- `budget_status`
-- `suggest_categories`
-- `draft_category_updates`
-- `draft_planned_expense`
-
-All domain and calculation currency values are `Decimal`. Agent-facing tool schemas accept
-currency as base-10 strings such as `"2000.00"`, then convert immediately to `Decimal`. This
-keeps OpenAI function schemas compatible without introducing binary floating-point arithmetic.
-The pure functions perform no I/O and have fixed sample tests.
-
-Expense `Category` and `Sub Category` support Notion `multi_select`. Every value is preserved.
-Exactly one selection becomes the canonical classification; multiple selections are surfaced
-for review instead of choosing the first or double-counting the expense.
-
-Budget status uses exact monthly sub-category membership: matched spending is `regular`, and
-unmatched spending is `variable`. Accumulated regular budgets are pace-forecast; discrete
-budgets reserve their full amount. Volatility determines the controllable portion of positive
-remaining budget.
-
-## Tool catalog
-
-Read tools:
-
-- `get_monthly_summary`
-- `get_uncategorized_transactions`
-- `suggest_categories`
-- `get_budget_status`
-- `forecast_month_end`
-- `get_upcoming_planned_expenses`
-- `get_budget_planning_context`
-
-Draft tools:
-
-- `draft_category_updates`
-- `draft_planned_expense`
-- `draft_financial_profile_update`
-- `draft_interaction_preference_update`
-- `draft_monthly_budget_plan`
-
-Preference read tools:
-
-- `get_financial_profile`
-- `get_interaction_profile`
-- `get_expense_monitoring_decisions`
-
-Approval-interrupted write tools:
-
-- `apply_financial_profile_update`
-- `apply_interaction_preference_update`
-- `apply_monthly_budget_plan`
-
-Draft tools return proposals only. The profile apply tool is included only in the approval-aware
-catalog and call LangGraph `interrupt()` before touching Notion.
-
-## Conversation persistence
-
-The graph requires a LangGraph checkpointer and a non-empty `thread_id`. Before each new turn,
-`manage_context` reloads Active profile entries, splits financial rules from `assistant.*`
-interaction settings, and checks the approximate conversation size.
-At 12,000 tokens it summarizes complete older turns, removes them from current message state,
-and keeps the six most recent user turns intact. Tests use `InMemorySaver`; production still
-needs a durable checkpointer and a separate checkpoint-retention policy.
-
-## Known configuration gap
-
-Future Expenses does not yet have a property mapping. Its read tool returns
-`schema_not_configured` until the title, target amount, due date, and optional saved amount
-properties are supplied. The allocation calculation and draft tool are already implemented
-and tested independently of Notion.

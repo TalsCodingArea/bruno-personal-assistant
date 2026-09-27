@@ -3,16 +3,17 @@
 import asyncio
 from datetime import UTC, datetime
 
-from app.domain.interaction import BanterLevel, InteractionSetting, Verbosity
-from app.domain.profile import FinancialProfileEntry, ProfileKind, ProfileStatus
-from app.integrations.notion_profile import NotionFinancialProfileRepository
-from app.services.finance_queries import FinanceQueryService
-from app.services.interaction import (
+from financial_agent.domain.interaction import BanterLevel, InteractionSetting, Verbosity
+from financial_agent.domain.profile import FinancialProfileEntry, ProfileKind, ProfileStatus
+from financial_agent.integrations.notion_profile import NotionFinancialProfileRepository
+from financial_agent.services.finance_queries import FinanceQueryService
+from financial_agent.services.interaction import (
     InteractionProfileService,
     compile_interaction_profile,
 )
-from app.services.profile import FinancialProfileService
-from app.tools import build_tool_catalog
+from financial_agent.services.profile import FinancialProfileService
+from financial_agent.tools import build_tool_catalog
+
 from tests.fakes import FakeFinanceReader, FakeNotion
 
 

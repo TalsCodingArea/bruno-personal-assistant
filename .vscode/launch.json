@@ -2,19 +2,60 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "LangGraph Dev",
+      "name": "Financial Capability Dev",
       "type": "debugpy",
       "request": "launch",
-
-      "program": "${workspaceFolder}/.venv/bin/langgraph",
-      "args": ["dev"],
+      "module": "bruno",
+      "args": ["capability-dev", "financial-agent"],
 
       "python": "${workspaceFolder}/.venv/bin/python",
       "cwd": "${workspaceFolder}",
-
       "console": "integratedTerminal",
       "justMyCode": false,
       "subProcess": true
+    },
+    {
+      "name": "Bank Importer: Debug Excel File",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "bank_account",
+      "args": ["debug", "${input:bankExcelFile}"],
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Bank Importer: Dry Run Inbox",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "bank_account",
+      "args": ["run-once", "--dry-run"],
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Bank Importer: LIVE Full Flow (writes + deletes)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/bank_account/__main__.py",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    }
+  ],
+  "inputs": [
+    {
+      "id": "bankExcelFile",
+      "type": "promptString",
+      "description": "Absolute path to the bank .xlsx file",
+      "default": "${workspaceFolder}/bank-inbox/export.xlsx"
     }
   ]
 }

@@ -5,6 +5,22 @@ from collections.abc import Sequence
 from datetime import date
 from typing import Any, ClassVar
 
+from financial_agent.graphs import (
+    ContextPolicy,
+    build_read_only_conversation_graph,
+    resume_profile_write,
+    send_message,
+    start_conversation_turn,
+)
+from financial_agent.integrations.notion_profile import NotionFinancialProfileRepository
+from financial_agent.services.budget_planning import BudgetPlanningService
+from financial_agent.services.interaction import InteractionProfileService
+from financial_agent.services.profile import FinancialProfileService
+from financial_agent.tools.write import (
+    build_budget_write_tools,
+    build_interaction_write_tools,
+    build_profile_write_tools,
+)
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
@@ -13,22 +29,6 @@ from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.memory import InMemorySaver
 
-from app.graphs import (
-    ContextPolicy,
-    build_read_only_conversation_graph,
-    resume_profile_write,
-    send_message,
-    start_conversation_turn,
-)
-from app.integrations.notion_profile import NotionFinancialProfileRepository
-from app.services.budget_planning import BudgetPlanningService
-from app.services.interaction import InteractionProfileService
-from app.services.profile import FinancialProfileService
-from app.tools.write import (
-    build_budget_write_tools,
-    build_interaction_write_tools,
-    build_profile_write_tools,
-)
 from tests.fakes import FakeFinanceReader, FakeNotion
 from tests.test_budget_planning import CreationRepository, Rules
 

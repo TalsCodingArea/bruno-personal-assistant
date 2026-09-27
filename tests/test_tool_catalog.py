@@ -5,16 +5,16 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
+from financial_agent.integrations.expense_monitor_ledger import InMemoryExpenseMonitorLedger
+from financial_agent.integrations.notion_profile import NotionFinancialProfileRepository
+from financial_agent.services.budget_planning import BudgetPlanningService
+from financial_agent.services.finance_queries import FinanceQueryService
+from financial_agent.services.interaction import InteractionProfileService
+from financial_agent.services.profile import FinancialProfileService
+from financial_agent.tools import build_tool_catalog
+from financial_agent.tools.budget_input import BudgetPageDraftInput
 from langchain_core.utils.function_calling import convert_to_openai_tool
 
-from app.integrations.expense_monitor_ledger import InMemoryExpenseMonitorLedger
-from app.integrations.notion_profile import NotionFinancialProfileRepository
-from app.services.budget_planning import BudgetPlanningService
-from app.services.finance_queries import FinanceQueryService
-from app.services.interaction import InteractionProfileService
-from app.services.profile import FinancialProfileService
-from app.tools import build_tool_catalog
-from app.tools.budget_input import BudgetPageDraftInput
 from tests.fakes import FakeFinanceReader, FakeNotion
 from tests.test_budget_planning import CreationRepository, Rules
 

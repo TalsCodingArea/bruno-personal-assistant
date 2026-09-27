@@ -1,7 +1,7 @@
 """Tests for application configuration."""
 
-from app.config import Environment, Settings
-from app.domain.expense_monitoring import ExpenseMonitorMode
+from financial_agent.config import Environment, Settings
+from financial_agent.domain.expense_monitoring import ExpenseMonitorMode
 
 
 def test_settings_have_safe_development_defaults() -> None:

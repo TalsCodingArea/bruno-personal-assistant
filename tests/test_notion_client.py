@@ -3,9 +3,8 @@
 import asyncio
 
 import httpx
+from financial_agent.integrations.notion import NotionClient
 from notion_client import AsyncClient as NotionSDKAsyncClient
-
-from app.integrations.notion import NotionClient
 
 
 def test_query_all_uses_data_source_endpoint_and_paginates() -> None:

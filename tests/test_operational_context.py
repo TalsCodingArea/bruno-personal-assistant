@@ -6,19 +6,18 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-
-from app.domain.budget_mutation import (
+from financial_agent.domain.budget_mutation import (
     AppliedBudgetMutationItem,
     BudgetMutationResult,
     BudgetMutationStatus,
 )
-from app.domain.models import Budget, Income, ProgressiveMode, Transaction
-from app.domain.monitoring import (
+from financial_agent.domain.models import Budget, Income, ProgressiveMode, Transaction
+from financial_agent.domain.monitoring import (
     DailyBudgetMonitoringReport,
     MonitoringInputSnapshot,
     MonitoringPolicy,
 )
-from app.domain.operational_context import (
+from financial_agent.domain.operational_context import (
     OperationalContextChangeKind,
     OperationalContextEntry,
     OperationalContextKind,
@@ -26,9 +25,9 @@ from app.domain.operational_context import (
     OperationalContextState,
     OperationalContextVersionConflict,
 )
-from app.services.daily_budget_analysis import analyze_daily_budget_state
-from app.services.operational_context import OperationalContextService
-from app.services.operational_reconciliation import reconcile_daily_report
+from financial_agent.services.daily_budget_analysis import analyze_daily_budget_state
+from financial_agent.services.operational_context import OperationalContextService
+from financial_agent.services.operational_reconciliation import reconcile_daily_report
 
 
 def report(

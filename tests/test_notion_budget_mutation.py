@@ -7,8 +7,7 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-
-from app.domain.budget_mutation import (
+from financial_agent.domain.budget_mutation import (
     BudgetMutationApplyError,
     BudgetMutationFreshnessError,
     BudgetMutationItem,
@@ -17,8 +16,8 @@ from app.domain.budget_mutation import (
     BudgetPreferenceReview,
     VerifiedBudgetMutation,
 )
-from app.domain.models import ProgressiveMode
-from app.integrations.notion_budget_mutation import NotionBudgetMutationRepository
+from financial_agent.domain.models import ProgressiveMode
+from financial_agent.integrations.notion_budget_mutation import NotionBudgetMutationRepository
 
 EDITED = datetime(2026, 8, 20, 3, 55, tzinfo=UTC)
 ADJUSTED = datetime(2026, 8, 20, 4, 0, tzinfo=UTC)

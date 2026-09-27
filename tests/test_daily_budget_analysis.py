@@ -4,15 +4,14 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-
-from app.domain.models import Budget, ProgressiveMode, Transaction
-from app.domain.monitoring import (
+from financial_agent.domain.models import Budget, ProgressiveMode, Transaction
+from financial_agent.domain.monitoring import (
     AnalysisStatus,
     FundingSourceKind,
     MonitoringPolicy,
     ObservationKind,
 )
-from app.services.daily_budget_analysis import analyze_daily_budget_state
+from financial_agent.services.daily_budget_analysis import analyze_daily_budget_state
 
 MONTH = date(2026, 8, 1)
 AS_OF = date(2026, 8, 20)
@@ -82,6 +81,43 @@ def test_projection_uses_calendar_pacing_only_for_accumulated_budgets() -> None:
     assert [item.kind for item in result.observations] == [
         ObservationKind.PROJECTION_DEVIATION
     ]
+
+
+def test_material_accumulated_projection_is_immediately_rebudgeted() -> None:
+    result = analyze_daily_budget_state(
+        [expense("groceries", "260", "Groceries")],
+        [budget("Groceries", "310")],
+        AS_OF,
+        Decimal("1000"),
+        policy=MonitoringPolicy(protected_subcategories=()),
+    )
+
+    assert result.adjustment_plan is not None
+    plan = result.adjustment_plan
+    assert plan.budget_changes[0].subcategory == "Groceries"
+    assert plan.budget_changes[0].budget_after == Decimal("403.00")
+    assert plan.remaining_variable_reserve_after_adjustment == Decimal("597.00")
+
+
+def test_discrete_budget_is_not_rebudgeted_from_calendar_pacing() -> None:
+    result = analyze_daily_budget_state(
+        [expense("insurance", "260", "Insurance")],
+        [
+            budget(
+                "Insurance",
+                "310",
+                progressive=ProgressiveMode.DISCRETE,
+                volatility="100",
+            )
+        ],
+        AS_OF,
+        Decimal("1000"),
+        policy=MonitoringPolicy(protected_subcategories=()),
+    )
+
+    assert result.adjustment_plan is not None
+    assert result.adjustment_plan.budget_changes == ()
+    assert result.observations == ()
 
 
 def test_uncategorized_and_unbudgeted_expenses_consume_variable_reserve() -> None:

@@ -5,15 +5,14 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-
-from app.domain.models import Budget, Income, ProgressiveMode, Transaction
-from app.domain.monitoring import (
+from financial_agent.domain.models import Budget, Income, ProgressiveMode, Transaction
+from financial_agent.domain.monitoring import (
     AnalysisStatus,
     MonitoringInputSnapshot,
     MonitoringPolicy,
 )
-from app.services.daily_budget_monitoring import DailyBudgetMonitoringService
-from app.tools.serialization import jsonable
+from financial_agent.services.daily_budget_monitoring import DailyBudgetMonitoringService
+from financial_agent.tools.serialization import jsonable
 
 AS_OF = date(2026, 8, 20)
 

@@ -4,26 +4,26 @@ import asyncio
 from datetime import date
 from decimal import Decimal
 
-from app.domain.budget_mutation import (
+from financial_agent.domain.budget_mutation import (
     AppliedBudgetMutationItem,
     BudgetMutationPartialFailure,
     BudgetMutationResult,
     BudgetMutationStatus,
 )
-from app.domain.daily_budget_workflow import DailyBudgetMutationDisposition
-from app.domain.models import Budget, Income, ProgressiveMode, Transaction
-from app.domain.monitoring import (
+from financial_agent.domain.daily_budget_workflow import DailyBudgetMutationDisposition
+from financial_agent.domain.models import Budget, Income, ProgressiveMode, Transaction
+from financial_agent.domain.monitoring import (
     DailyBudgetMonitoringReport,
     MonitoringInputSnapshot,
     MonitoringPolicy,
 )
-from app.domain.operational_context import (
+from financial_agent.domain.operational_context import (
     OperationalContextEntry,
     OperationalContextPersistenceResult,
     OperationalContextReconciliation,
 )
-from app.graphs.daily_budget import build_daily_budget_graph
-from app.services.daily_budget_analysis import analyze_daily_budget_state
+from financial_agent.graphs.daily_budget import build_daily_budget_graph
+from financial_agent.services.daily_budget_analysis import analyze_daily_budget_state
 
 AS_OF = date(2026, 8, 20)
 

@@ -1,0 +1,9 @@
+{
+  "dependencies": ["../.."],
+  "graphs": {
+    "finance_agent": "./financial_agent/graphs/studio.py:graph",
+    "daily_budget_monitor": "./financial_agent/graphs/studio.py:daily_budget_graph",
+    "expense_monitor": "./financial_agent/graphs/studio.py:expense_monitor_graph"
+  },
+  "env": "../../.env"
+}

@@ -2,8 +2,8 @@
 
 import asyncio
 
-from app.bootstrap import build_finance_application
-from app.config import Settings
+from financial_agent.bootstrap import build_finance_application
+from financial_agent.config import Settings
 
 SOURCE_SETTINGS = {
     "expenses_data_source_id": "expenses-test",

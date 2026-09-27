@@ -4,10 +4,9 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-
-from app.domain.models import Budget, PlannedExpense, ProgressiveMode, Transaction
-from app.domain.money import money
-from app.services.calculations import (
+from financial_agent.domain.models import Budget, PlannedExpense, ProgressiveMode, Transaction
+from financial_agent.domain.money import money
+from financial_agent.services.calculations import (
     budget_status,
     draft_category_updates,
     draft_planned_expense,

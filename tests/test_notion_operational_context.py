@@ -6,14 +6,15 @@ from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
-from app.domain.operational_context import (
+from financial_agent.domain.operational_context import (
     OperationalContextKind,
     OperationalContextLifecycle,
     OperationalContextState,
 )
-from app.integrations.notion_operational_context import (
+from financial_agent.integrations.notion_operational_context import (
     NotionOperationalContextRepository,
 )
+
 from tests.fakes import FakeNotion
 
 

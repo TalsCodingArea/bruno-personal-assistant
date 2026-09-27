@@ -5,26 +5,25 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
-
-from app.domain.budget_mutation import (
+from financial_agent.domain.budget_mutation import (
     BudgetMutationFreshnessError,
     BudgetMutationResult,
     BudgetMutationStatus,
     BudgetPreferenceReview,
     BudgetPreferenceReviewRejected,
 )
-from app.domain.models import Budget, Income, ProgressiveMode, Transaction
-from app.domain.monitoring import (
+from financial_agent.domain.models import Budget, Income, ProgressiveMode, Transaction
+from financial_agent.domain.monitoring import (
     DailyBudgetMonitoringReport,
     MonitoringGuideline,
     MonitoringInputSnapshot,
     MonitoringPolicy,
 )
-from app.services.budget_mutation import (
+from financial_agent.services.budget_mutation import (
     BudgetMutationService,
     build_budget_mutation_proposal,
 )
-from app.services.daily_budget_analysis import analyze_daily_budget_state
+from financial_agent.services.daily_budget_analysis import analyze_daily_budget_state
 
 AS_OF = date(2026, 8, 20)
 EDITED = datetime(2026, 8, 20, 3, 55, tzinfo=UTC)

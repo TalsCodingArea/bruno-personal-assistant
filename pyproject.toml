@@ -3,9 +3,9 @@ requires = ["hatchling>=1.27,<2"]
 build-backend = "hatchling.build"
 
 [project]
-name = "finance-agent"
+name = "bruno-personal-assistant"
 version = "0.1.0"
-description = "A LangGraph-based personal finance agent with Notion as its source of truth."
+description = "A Telegram personal assistant with composable LangGraph capabilities."
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
 dependencies = [
@@ -13,8 +13,14 @@ dependencies = [
     "langchain-core>=1.4,<2",
     "langchain-openai>=1.2,<2",
     "langgraph>=1.2,<2",
+    "langgraph-checkpoint-sqlite>=3,<4",
     "notion-client>=3.1,<4",
+    "openpyxl>=3.1,<4",
+    "openai>=2.26,<3",
+    "pymupdf>=1.26,<2",
     "pydantic-settings>=2.14,<3",
+    "python-dotenv>=1.1,<2",
+    "python-telegram-bot[job-queue]>=22.5,<23",
 ]
 
 [project.optional-dependencies]
@@ -24,14 +30,16 @@ dev = [
     "pytest>=9.1,<10",
     "pytest-cov>=7,<8",
     "ruff>=0.12,<1",
+    "types-openpyxl>=3.1,<4",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["app"]
+packages = ["bruno", "bank_account", "Capabilities/financial-agent/financial_agent"]
 
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers"
 testpaths = ["tests"]
+pythonpath = ["Capabilities/financial-agent"]
 
 [tool.ruff]
 target-version = "py311"
@@ -43,4 +51,4 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-packages = ["app"]
+packages = ["bruno", "bank_account", "financial_agent"]
