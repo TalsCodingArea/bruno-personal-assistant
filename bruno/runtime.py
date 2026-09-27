@@ -16,8 +16,16 @@ from financial_agent.graphs.conversation import (
     resume_approval,
     start_conversation_turn,
 )
+from financial_agent.integrations.jev import JevTransactionClassifier
+from financial_agent.integrations.jev_category_decider import JevCategoryDecider
 from financial_agent.integrations.openai_model import build_openai_chat_model
+from financial_agent.integrations.tavily_search import TavilyMerchantSearch
 from financial_agent.services.expense_automation import ExpenseAutomationService
+from financial_agent.services.expense_classification import (
+    ExpenseClassificationPolicy,
+    ExpenseClassificationReader,
+    ExpenseClassificationService,
+)
 from financial_agent.tools.automation import (
     build_expense_automation_tools,
     build_expense_checkup_tools,
@@ -61,6 +69,7 @@ class BrunoRuntime:
         self.finance_graph: ConversationGraph | None = None
         self.coordinator_graph: Any | None = None
         self.expenses: ExpenseAutomationService | None = None
+        self.expense_classifier: ExpenseClassificationService | None = None
         self.automation_tools: dict[str, Any] = {}
         self._scheduler_task: asyncio.Task[None] | None = None
 
@@ -109,10 +118,45 @@ class BrunoRuntime:
                 if self.finance_settings.notion_token is None:
                     raise ValueError("FINANCE_AGENT_NOTION_TOKEN is required")
                 bank_settings = load_bank_account_settings(require_notion=False)
+                transaction_classifier = (
+                    JevTransactionClassifier(
+                        api_key=self.settings.typesafe_api_key,
+                        model=self.settings.jev_model,
+                        threshold=self.settings.jev_transaction_threshold,
+                    )
+                    if self.settings.typesafe_api_key is not None
+                    else None
+                )
+                category_decider = (
+                    JevCategoryDecider(
+                        api_key=self.settings.typesafe_api_key,
+                        model=self.settings.jev_model,
+                    )
+                    if self.settings.typesafe_api_key is not None
+                    else None
+                )
+                merchant_search = (
+                    TavilyMerchantSearch(self.settings.tavily_api_key)
+                    if self.settings.tavily_api_key is not None
+                    else None
+                )
+                expense_classifier = ExpenseClassificationService(
+                    cast(ExpenseClassificationReader, finance.finance.reader),
+                    expenses,
+                    decider=category_decider,
+                    search=merchant_search,
+                    policy=ExpenseClassificationPolicy(
+                        mode=self.settings.expense_classifier_mode,
+                        confidence_threshold=Decimal(
+                            str(self.settings.expense_classification_threshold)
+                        ),
+                    ),
+                )
                 tools = (
                     *build_expense_automation_tools(
                         expenses,
                         text_model=router_model,
+                        transaction_classifier=transaction_classifier,
                     ),
                     *build_expense_checkup_tools(
                         cast(DailyBudgetGraphRunner, finance.daily_budget_graph)
@@ -131,6 +175,7 @@ class BrunoRuntime:
             self.finance_graph = graph
             self.coordinator_graph = coordinator
             self.expenses = expenses
+            self.expense_classifier = expense_classifier
             self.automation_tools = {tool.name: tool for tool in tools}
             self._started = True
 
@@ -201,6 +246,21 @@ class BrunoRuntime:
             "severity": decision.highest_severity.value,
             "summary": decision.summary,
         }
+
+    async def classify_created_expense(self, page_id: str) -> dict[str, Any]:
+        """Classify one new expense before downstream budget analysis."""
+
+        await self.start()
+        if self.expense_classifier is None:
+            raise RuntimeError("Expense classifier is not started")
+        outcome = await self.expense_classifier.classify_created_expense(
+            page_id,
+            as_of=datetime.now().astimezone().date(),
+        )
+        serialized = jsonable(outcome)
+        if not isinstance(serialized, dict):
+            raise TypeError("Expense classifier returned an invalid result")
+        return serialized
 
     async def current_account_outlook(self) -> dict[str, Any] | None:
         """Return today's account settlement outlook when bank access is configured."""

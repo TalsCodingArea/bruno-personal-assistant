@@ -5,6 +5,7 @@ from datetime import date
 from pathlib import Path
 
 from financial_agent.domain.models import Transaction
+from financial_agent.integrations.jev import TransactionNotificationDecision
 from financial_agent.services.expense_automation import ExpenseAutomationService
 from financial_agent.tools.automation.expenses import build_expense_automation_tools
 
@@ -18,6 +19,22 @@ class FakeTextExpenseModel:
 
     async def ainvoke(self, messages: list[object]) -> object:
         return self.schema(description="Coffee Shop", amount=18.5)
+
+
+class FakeTransactionClassifier:
+    def __init__(self, *, is_transaction: bool, probability: float) -> None:
+        self.is_transaction = is_transaction
+        self.probability = probability
+        self.notifications: list[str] = []
+
+    async def classify_notification(self, text: str) -> TransactionNotificationDecision:
+        self.notifications.append(text)
+        return TransactionNotificationDecision(
+            is_transaction=self.is_transaction,
+            probability=self.probability,
+            model="jev-1.13.0",
+            request_id="request-1",
+        )
 
 
 def test_log_expense_builds_finance_schema_and_uploads_invoice(
@@ -146,6 +163,84 @@ def test_auto_expense_skips_explicit_foreign_currency() -> None:
 
         assert result["status"] == "skipped"
         assert notion.created == []
+
+    asyncio.run(scenario())
+
+
+def test_apply_classification_updates_only_category_fields() -> None:
+    async def scenario() -> None:
+        notion = FakeNotion()
+        service = ExpenseAutomationService(notion, "expenses")
+
+        await service.apply_classification(
+            "expense-1",
+            "Home 🏡",
+            "Groceries 🛒",
+        )
+
+        assert notion.updated == [
+            {
+                "page_id": "expense-1",
+                "properties": {
+                    "Category": {
+                        "multi_select": [{"name": "Home 🏡"}],
+                    },
+                    "Sub Category": {
+                        "multi_select": [{"name": "Groceries 🛒"}],
+                    },
+                },
+            }
+        ]
+
+    asyncio.run(scenario())
+
+
+def test_handle_cal_notification_ignores_non_transaction_without_extraction() -> None:
+    async def scenario() -> None:
+        notion = FakeNotion()
+        classifier = FakeTransactionClassifier(is_transaction=False, probability=0.04)
+        tools = {
+            item.name: item
+            for item in build_expense_automation_tools(
+                ExpenseAutomationService(notion, "expenses"),
+                transaction_classifier=classifier,
+            )
+        }
+
+        result = await tools["handle_cal_notification"].ainvoke(
+            {"text": "Your one-time verification code is 123456"}
+        )
+
+        assert result["status"] == "ignored"
+        assert result["transaction_probability"] == 0.04
+        assert classifier.notifications == ["Your one-time verification code is 123456"]
+        assert notion.created == []
+
+    asyncio.run(scenario())
+
+
+def test_handle_cal_notification_extracts_and_logs_transaction() -> None:
+    async def scenario() -> None:
+        notion = FakeNotion()
+        classifier = FakeTransactionClassifier(is_transaction=True, probability=0.98)
+        tools = {
+            item.name: item
+            for item in build_expense_automation_tools(
+                ExpenseAutomationService(notion, "expenses"),
+                text_model=FakeTextExpenseModel(),  # type: ignore[arg-type]
+                transaction_classifier=classifier,
+            )
+        }
+
+        result = await tools["handle_cal_notification"].ainvoke(
+            {"text": "A charge of 18.50 ILS was made at Coffee Shop"}
+        )
+
+        assert result["description"] == "Coffee Shop"
+        assert result["amount"] == "18.50"
+        assert result["transaction_probability"] == 0.98
+        assert result["classifier_model"] == "jev-1.13.0"
+        assert len(notion.created) == 1
 
     asyncio.run(scenario())
 

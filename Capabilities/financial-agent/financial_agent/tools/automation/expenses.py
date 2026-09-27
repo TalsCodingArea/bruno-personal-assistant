@@ -8,9 +8,11 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool, tool
 from pydantic import BaseModel, Field
 
+from financial_agent.integrations.jev import TransactionNotificationDecision
 from financial_agent.services.expense_automation import (
     DEFAULT_EXPENSE_TIMEZONE,
     ExpenseAutomationService,
+    LoggedExpense,
 )
 
 _NON_SHEKEL_CURRENCY_RE = re.compile(
@@ -28,6 +30,12 @@ class ExpenseTextModel(Protocol):
     def with_structured_output(self, schema: type[BaseModel]) -> Any: ...
 
 
+class TransactionNotificationClassifier(Protocol):
+    async def classify_notification(
+        self, text: str
+    ) -> TransactionNotificationDecision: ...
+
+
 class ExtractedExpense(BaseModel):
     """One ILS card transaction extracted from an automation message."""
 
@@ -39,6 +47,7 @@ def build_expense_automation_tools(
     service: ExpenseAutomationService,
     *,
     text_model: ExpenseTextModel | None = None,
+    transaction_classifier: TransactionNotificationClassifier | None = None,
 ) -> tuple[BaseTool, ...]:
     """Build tools that may only be registered in a trusted automation channel."""
 
@@ -117,47 +126,105 @@ def build_expense_automation_tools(
     ) -> dict[str, object]:
         """Extract one ILS card transaction with an LLM and log it uncategorized."""
 
-        if text_model is None:
-            raise RuntimeError("Text-expense automation requires an extraction model")
-        message_text = text.strip()
-        if not message_text:
-            raise ValueError("text cannot be empty")
-        extractor = text_model.with_structured_output(ExtractedExpense)
-        parsed = await extractor.ainvoke(
-            [
-                SystemMessage(
-                    content=(
-                        "You extract one Israeli credit-card transaction. "
-                        "Return the merchant name and ILS amount only."
-                    )
-                ),
-                HumanMessage(
-                    content=(
-                        "Extract one transaction from this SMS. The description is the "
-                        "merchant, not the card company. In Hebrew card messages, remove "
-                        "the leading ב from a merchant appearing after the card suffix. "
-                        "Do not infer category or subcategory.\n\nSMS:\n"
-                        f"{message_text}"
-                    )
-                ),
-            ]
-        )
-        if not isinstance(parsed, ExtractedExpense):
-            parsed = ExtractedExpense.model_validate(parsed)
-        result = await service.log_expense(
-            description=parsed.description,
-            amount=str(parsed.amount),
-            category=("Uncategorized",),
-            tags=tags or (tag,),
+        result = await _extract_and_log_expense(
+            service,
+            text_model,
+            text=text,
+            tag=tag,
+            tags=tags,
             timezone=timezone,
         )
         return asdict(result)
+
+    @tool("handle_cal_notification")
+    async def handle_cal_notification(
+        text: str,
+        tag: str = "Tal 👨🏻",
+        tags: list[str] | None = None,
+        timezone: str = DEFAULT_EXPENSE_TIMEZONE,
+    ) -> dict[str, object]:
+        """Classify a Cal phone notification and log it only when it is an expense."""
+
+        if transaction_classifier is None:
+            raise RuntimeError(
+                "Cal notification automation requires TYPESAFE_API_KEY for Jev"
+            )
+        message_text = text.strip()
+        if not message_text:
+            raise ValueError("text cannot be empty")
+        decision = await transaction_classifier.classify_notification(message_text)
+        if not decision.is_transaction:
+            return {
+                "status": "ignored",
+                "message": "Ignored Cal notification: it is not an expense transaction.",
+                "transaction_probability": decision.probability,
+                "classifier_model": decision.model,
+            }
+        result = await _extract_and_log_expense(
+            service,
+            text_model,
+            text=message_text,
+            tag=tag,
+            tags=tags,
+            timezone=timezone,
+        )
+        return {
+            **asdict(result),
+            "transaction_probability": decision.probability,
+            "classifier_model": decision.model,
+        }
 
     return (
         get_expenses_for_date,
         log_expense,
         auto_expense_tool,
         log_txt_expense,
+        handle_cal_notification,
+    )
+
+
+async def _extract_and_log_expense(
+    service: ExpenseAutomationService,
+    text_model: ExpenseTextModel | None,
+    *,
+    text: str,
+    tag: str,
+    tags: list[str] | None,
+    timezone: str,
+) -> LoggedExpense:
+    if text_model is None:
+        raise RuntimeError("Text-expense automation requires an extraction model")
+    message_text = text.strip()
+    if not message_text:
+        raise ValueError("text cannot be empty")
+    extractor = text_model.with_structured_output(ExtractedExpense)
+    parsed = await extractor.ainvoke(
+        [
+            SystemMessage(
+                content=(
+                    "You extract one Israeli credit-card transaction. "
+                    "Return the merchant name and ILS amount only."
+                )
+            ),
+            HumanMessage(
+                content=(
+                    "Extract one transaction from this phone notification. The description "
+                    "is the merchant, not the card company. In Hebrew card messages, remove "
+                    "the leading ב from a merchant appearing after the card suffix. "
+                    "Do not infer category or subcategory.\n\nNotification:\n"
+                    f"{message_text}"
+                )
+            ),
+        ]
+    )
+    if not isinstance(parsed, ExtractedExpense):
+        parsed = ExtractedExpense.model_validate(parsed)
+    return await service.log_expense(
+        description=parsed.description,
+        amount=str(parsed.amount),
+        category=("Uncategorized",),
+        tags=tags or (tag,),
+        timezone=timezone,
     )
 
 

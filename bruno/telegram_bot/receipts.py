@@ -2,6 +2,7 @@
 
 import asyncio
 import tempfile
+from datetime import date
 from pathlib import Path
 
 from financial_agent.domain.money import money
@@ -66,7 +67,7 @@ async def handle_receipt_pdf(
         action = "logged" if created else "attached to existing expense"
         response = (
             f"✅ Receipt {action}\nVendor: {logged.description}\nTotal: ₪{logged.amount}\n"
-            f"Category: {receipt.get('category')}"
+            f"Date: {logged.occurred_on}\nCategory: {receipt.get('category')}"
         )
         if logged.url:
             response += f"\n{logged.url}"
@@ -96,12 +97,13 @@ async def store_receipt_expense(
     *,
     invoice_path: Path,
     invoice_name: str,
+    today: date | None = None,
 ) -> tuple[LoggedExpense, bool]:
     """Attach a duplicate receipt to its expense, or create a new expense."""
 
     if runtime.expenses is None:
         raise RuntimeError("Receipt expense dependencies are unavailable")
-    fields = receipt_expense_fields(receipt)
+    fields = receipt_expense_fields(receipt, today=today)
     lookup = await runtime.invoke_automation(
         "get_expenses_for_date",
         {

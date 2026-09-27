@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
+from financial_agent.services.expense_classification import ClassificationMode
+from pydantic import SecretStr
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +27,12 @@ class BrunoSettings:
     expense_checkup_delay_seconds: float
     checkpoint_path: Path
     scheduler_path: Path
+    typesafe_api_key: SecretStr | None = None
+    tavily_api_key: SecretStr | None = None
+    jev_model: str = "jev-latest"
+    jev_transaction_threshold: float = 0.8
+    expense_classifier_mode: ClassificationMode = ClassificationMode.SHADOW
+    expense_classification_threshold: float = 0.8
 
 
 def load_bruno_settings() -> BrunoSettings:
@@ -43,6 +51,29 @@ def load_bruno_settings() -> BrunoSettings:
     delay = float(os.getenv("BRUNO_EXPENSE_CHECKUP_DELAY_SECONDS", "600"))
     if delay < 0:
         raise ValueError("BRUNO_EXPENSE_CHECKUP_DELAY_SECONDS cannot be negative")
+    jev_threshold = float(os.getenv("BRUNO_JEV_TRANSACTION_THRESHOLD", "0.8"))
+    if not 0 < jev_threshold <= 1:
+        raise ValueError(
+            "BRUNO_JEV_TRANSACTION_THRESHOLD must be greater than 0 and at most 1"
+        )
+    typesafe_api_key = os.getenv("TYPESAFE_API_KEY", "").strip()
+    tavily_api_key = os.getenv("TAVILY_API_KEY", "").strip()
+    classifier_mode_value = os.getenv(
+        "BRUNO_EXPENSE_CLASSIFIER_MODE", "shadow"
+    ).strip().casefold()
+    try:
+        classifier_mode = ClassificationMode(classifier_mode_value)
+    except ValueError as exc:
+        raise ValueError(
+            "BRUNO_EXPENSE_CLASSIFIER_MODE must be off, shadow, or apply"
+        ) from exc
+    classification_threshold = float(
+        os.getenv("BRUNO_EXPENSE_CLASSIFICATION_THRESHOLD", "0.8")
+    )
+    if not 0 < classification_threshold <= 1:
+        raise ValueError(
+            "BRUNO_EXPENSE_CLASSIFICATION_THRESHOLD must be greater than 0 and at most 1"
+        )
     return BrunoSettings(
         bot_token=bot_token,
         channels=TelegramChannels(
@@ -63,4 +94,10 @@ def load_bruno_settings() -> BrunoSettings:
         scheduler_path=Path(
             os.getenv("BRUNO_SCHEDULER_PATH", ".bruno/scheduler.sqlite3")
         ),
+        typesafe_api_key=(SecretStr(typesafe_api_key) if typesafe_api_key else None),
+        tavily_api_key=(SecretStr(tavily_api_key) if tavily_api_key else None),
+        jev_model=os.getenv("BRUNO_JEV_MODEL", "jev-latest").strip(),
+        jev_transaction_threshold=jev_threshold,
+        expense_classifier_mode=classifier_mode,
+        expense_classification_threshold=classification_threshold,
     )

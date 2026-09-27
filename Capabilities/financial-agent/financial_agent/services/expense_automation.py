@@ -141,6 +141,31 @@ class ExpenseAutomationService:
         transactions = await self.reader.transactions(target, target)
         return tuple(_candidate(item) for item in transactions)
 
+    async def apply_classification(
+        self,
+        page_id: str,
+        category: str,
+        subcategory: str,
+    ) -> None:
+        """Persist one trusted classifier decision on an existing expense."""
+
+        cleaned_page_id = page_id.strip()
+        cleaned_category = category.strip()
+        cleaned_subcategory = subcategory.strip()
+        if not cleaned_page_id:
+            raise ValueError("page_id cannot be empty")
+        if not cleaned_category or not cleaned_subcategory:
+            raise ValueError("category and subcategory cannot be empty")
+        await self.notion.update_page(
+            cleaned_page_id,
+            {
+                self.properties.expense_category: _multi_select((cleaned_category,)),
+                self.properties.expense_subcategory: _multi_select(
+                    (cleaned_subcategory,)
+                ),
+            },
+        )
+
     async def attach_receipt(
         self,
         *,

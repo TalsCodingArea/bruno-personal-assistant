@@ -20,6 +20,7 @@ from bruno.telegram_bot.automations import (
     normalize_automation_arguments,
     normalize_expense_arguments,
     parse_automation_payload,
+    process_created_expense,
 )
 from bruno.telegram_bot.receipts import store_receipt_expense
 from tests.fakes import FakeFinanceReader, FakeNotion
@@ -74,6 +75,22 @@ class FakeAutomationRuntime:
             raise AutomationToolNotFoundError(tool_name)
         self.calls.append((tool_name, arguments))
         return {"message": "automation ran"}
+
+
+class FakeCreatedExpenseRuntime:
+    def __init__(self, *, classification_fails: bool = False) -> None:
+        self.events: list[str] = []
+        self.classification_fails = classification_fails
+
+    async def classify_created_expense(self, page_id: str) -> dict[str, Any]:
+        self.events.append(f"classify:{page_id}")
+        if self.classification_fails:
+            raise RuntimeError("classifier unavailable")
+        return {"stage": "skipped", "would_apply": False, "applied": False}
+
+    async def analyze_created_expense(self, page_id: str) -> dict[str, str]:
+        self.events.append(f"analyze:{page_id}")
+        return {"severity": "informational", "summary": "No material issue."}
 
 
 def test_one_node_router_retains_thread_context() -> None:
@@ -138,6 +155,10 @@ def test_existing_automation_payload_is_normalized() -> None:
         "auto_expense_tool",
         {"Description": "Coffee", "Amount": 12.5},
     ) == {"description": "Coffee", "amount": 12.5}
+    assert normalize_automation_arguments(
+        "handle_cal_notification",
+        {"Text": "A charge at Coffee", "Tag": "Tal 👨🏻"},
+    ) == {"text": "A charge at Coffee", "tags": ["Tal 👨🏻"]}
 
 
 def test_automation_handler_dispatches_named_registered_tool() -> None:
@@ -194,6 +215,61 @@ def test_automation_handler_reports_missing_tool() -> None:
     asyncio.run(scenario())
 
 
+def test_created_expense_is_classified_before_financial_analysis(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        runtime = FakeCreatedExpenseRuntime()
+        settings = _bruno_settings(tmp_path)
+
+        await process_created_expense(
+            runtime,  # type: ignore[arg-type]
+            object(),  # type: ignore[arg-type]
+            settings,
+            page_id="expense-1",
+            fallback_chat=123,
+        )
+
+        assert runtime.events == ["classify:expense-1", "analyze:expense-1"]
+
+    asyncio.run(scenario())
+
+
+def test_classifier_failure_does_not_block_financial_analysis(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        runtime = FakeCreatedExpenseRuntime(classification_fails=True)
+
+        await process_created_expense(
+            runtime,  # type: ignore[arg-type]
+            object(),  # type: ignore[arg-type]
+            _bruno_settings(tmp_path),
+            page_id="expense-2",
+            fallback_chat=123,
+        )
+
+        assert runtime.events == ["classify:expense-2", "analyze:expense-2"]
+
+    asyncio.run(scenario())
+
+
+def _bruno_settings(tmp_path: Path) -> Any:
+    from bruno.config import BrunoSettings, TelegramChannels
+
+    return BrunoSettings(
+        bot_token="token",
+        channels=TelegramChannels(
+            receipts="",
+            personal_assistant="123",
+            logs="",
+            automations="",
+        ),
+        receipt_category_options=(),
+        receipt_model="receipt-model",
+        router_model="router-model",
+        expense_checkup_delay_seconds=0,
+        checkpoint_path=tmp_path / "checkpoints.sqlite3",
+        scheduler_path=tmp_path / "scheduler.sqlite3",
+    )
+
+
 def test_receipt_mapping_uses_finance_expense_fields() -> None:
     fields = receipt_expense_fields(
         {"vendor": "Market", "total_amount": 50, "category": "Groceries"}
@@ -201,6 +277,62 @@ def test_receipt_mapping_uses_finance_expense_fields() -> None:
 
     assert fields["category"] == ["Home 🏡"]
     assert fields["subcategory"] == ["Groceries 🛒"]
+
+
+def test_israeli_receipt_date_prefers_day_month_year_and_recent_interpretation() -> None:
+    fields = receipt_expense_fields(
+        {
+            "vendor": "Israeli Market",
+            "total_amount": 50,
+            "country": "Israel",
+            "date_text": "22/09/26",
+            "date": "2022-09-26",
+        },
+        today=date(2026, 9, 27),
+    )
+
+    assert fields["occurred_on"] == "2026-09-22"
+
+
+def test_receipt_mapping_drops_implausibly_old_date() -> None:
+    fields = receipt_expense_fields(
+        {
+            "vendor": "Market",
+            "total_amount": 50,
+            "date": "2022-09-26",
+        },
+        today=date(2026, 9, 27),
+    )
+
+    assert fields["occurred_on"] is None
+
+
+def test_israeli_receipt_recovers_reversed_short_date_without_raw_text() -> None:
+    fields = receipt_expense_fields(
+        {
+            "vendor": "Israeli Market",
+            "total_amount": 50,
+            "currency": "ILS",
+            "language": "Hebrew",
+            "date": "2022-09-26",
+        },
+        today=date(2026, 9, 27),
+    )
+
+    assert fields["occurred_on"] == "2026-09-22"
+
+
+def test_receipt_mapping_keeps_reasonable_recent_iso_date() -> None:
+    fields = receipt_expense_fields(
+        {
+            "vendor": "Market",
+            "total_amount": 50,
+            "date": "2026-08-31",
+        },
+        today=date(2026, 9, 27),
+    )
+
+    assert fields["occurred_on"] == "2026-08-31"
 
 
 def test_receipt_flow_matches_same_date_and_amount_despite_different_names(
@@ -251,6 +383,45 @@ def test_receipt_flow_matches_same_date_and_amount_despite_different_names(
         assert logged.page_id == "matched-expense"
         assert notion.created == []
         assert notion.updated[0]["page_id"] == "matched-expense"
+
+    asyncio.run(scenario())
+
+
+def test_receipt_flow_corrects_israeli_short_date_before_notion_write(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        notion = FakeNotion()
+        expenses = ExpenseAutomationService(
+            notion,
+            "expenses",
+            reader=FakeFinanceReader(),
+        )
+        runtime = FakeReceiptRuntime(expenses)
+        invoice = tmp_path / "israeli-receipt.pdf"
+        invoice.write_bytes(b"%PDF-test")
+
+        logged, created = await store_receipt_expense(
+            runtime,  # type: ignore[arg-type]
+            {
+                "vendor": "Israeli Market",
+                "total_amount": "50.00",
+                "currency": "ILS",
+                "language": "Hebrew",
+                "country": "Israel",
+                "date_text": "22/09/26",
+                "date": "2022-09-26",
+            },
+            invoice_path=invoice,
+            invoice_name="israeli-receipt.pdf",
+            today=date(2026, 9, 27),
+        )
+
+        assert created is True
+        assert logged.occurred_on == "2026-09-22"
+        assert notion.created[0]["properties"]["Date"] == {
+            "date": {"start": "2026-09-22"}
+        }
 
     asyncio.run(scenario())
 

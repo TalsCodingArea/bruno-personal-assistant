@@ -150,6 +150,53 @@ An existing Bruno-style automation payload remains accepted:
 `Timezone` defaults to the fixed offset `GMT+03:00`. Timestamp inputs are converted to that
 offset before Bruno chooses the expense date.
 
+Phone notification automations can submit raw Cal text through Jev's transaction gate:
+
+```json
+{
+  "tool": "handle_cal_notification",
+  "args": {
+    "Text": "עסקה בסך 18.50 ש״ח בבית עסק Coffee Shop"
+  }
+}
+```
+
+Set `TYPESAFE_API_KEY` before using this tool. Jev only decides whether the notification is an
+expense with both an amount and merchant; the regular router model extracts those fields after
+the gate passes. Non-transaction notifications are ignored. The default Jev threshold is `0.8`
+and can be tuned with `BRUNO_JEV_TRANSACTION_THRESHOLD` after evaluating real Cal messages.
+
+## Automatic expense classification
+
+Every newly created uncategorized expense goes through one bounded classification ladder before
+its financial-impact analysis:
+
+1. exact and fuzzy merchant matching against the prior 730 days of categorized expenses;
+2. Jev selecting from category/subcategory pairs that already exist in that history;
+3. if the result is still below the confidence threshold, a minimal Tavily merchant search and
+   one final Jev selection using the returned snippets.
+
+The classifier never invents a category pair, sends transaction amounts or other financial data
+to web search, or rewrites historical expenses. A failed model or search request leaves the new
+expense uncategorized and does not block budget monitoring. Once an accepted category is written,
+normal expense history makes that decision available to future classifications.
+
+Set `TYPESAFE_API_KEY` for the Jev stages and `TAVILY_API_KEY` for the low-confidence web fallback.
+`BRUNO_EXPENSE_CLASSIFICATION_THRESHOLD` defaults to `0.8`. Rollout defaults to
+`BRUNO_EXPENSE_CLASSIFIER_MODE=shadow`, which records what would be applied without changing
+Notion. Change the mode to `apply` after reviewing shadow results, or `off` to disable the flow.
+
+To calibrate the history-stage threshold without API calls, export labeled expenses to a JSON
+list with `id`, `description`, `occurred_on`, `category`, and `subcategory`, then run:
+
+```bash
+.venv/bin/python scripts/evaluate-expense-classifier.py expenses.json --threshold 0.8
+```
+
+The evaluator walks forward chronologically, so a transaction is predicted only from expenses
+that would already have existed at that point. It reports both precision (`accuracy`) and the
+share of labeled expenses the history stage could classify (`coverage`).
+
 `check_expenses` may also be sent through the automation chat. It schedules a check rather
 than running immediately.
 
@@ -163,7 +210,13 @@ Before creating an expense from a receipt, Bruno loads expenses from the receipt
 existing expense has exactly the same amount, Bruno adds the PDF to that expense regardless of
 the expense description or receipt vendor name. Otherwise Bruno creates a new expense.
 
-Every newly created receipt expense or `log_expense` call schedules the same trailing-edge check.
+Receipt extraction preserves the printed date and inferred country before converting to ISO.
+Israeli receipts use `DD/MM/YY` or `DD/MM/YYYY`. Dates in the future or more than 366 days old
+are treated as implausible and fall back to the upload date; the final date is included in the
+Telegram confirmation.
+
+Every newly created receipt expense, `log_expense` call, or accepted Cal notification schedules
+the same trailing-edge check.
 A new expense within `BRUNO_EXPENSE_CHECKUP_DELAY_SECONDS` replaces the pending check, so a burst
 of expenses normally produces one analysis after ten quiet minutes.
 
@@ -176,7 +229,8 @@ The check uses the finance agent's deterministic daily budget graph. It can reac
 - a projected bank balance below the configured post-settlement minimum;
 - a surplus large enough to sweep into savings.
 
-Every created expense also runs the exact expense-event graph immediately. Critical findings
+Every created expense is classified first and then runs the exact expense-event graph immediately.
+Critical findings
 are sent at once; informational, watch, and warning findings are stored durably and surfaced on
 the next personal-assistant chat. The whole-budget debounce applies the same urgency policy.
 

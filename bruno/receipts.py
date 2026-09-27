@@ -4,10 +4,17 @@ import base64
 import io
 import json
 import re
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from openai import OpenAI
+
+_PRINTED_DATE_RE = re.compile(
+    r"(?<!\d)(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})(?!\d)"
+)
+_MAX_RECEIPT_AGE = timedelta(days=366)
 
 
 def extract_receipt(
@@ -80,9 +87,14 @@ def extract_receipt(
     return parsed
 
 
-def receipt_expense_fields(receipt: dict[str, Any]) -> dict[str, Any]:
+def receipt_expense_fields(
+    receipt: dict[str, Any],
+    *,
+    today: date | None = None,
+) -> dict[str, Any]:
     """Map Bruno's receipt labels to the finance expense schema."""
 
+    current_date = today or datetime.now(ZoneInfo("Asia/Jerusalem")).date()
     category = str(receipt.get("category") or "Uncategorized")
     mappings = {
         "Groceries": (["Home 🏡"], ["Groceries 🛒"]),
@@ -95,7 +107,7 @@ def receipt_expense_fields(receipt: dict[str, Any]) -> dict[str, Any]:
     return {
         "description": str(receipt.get("vendor") or "Receipt"),
         "amount": str(receipt.get("total_amount")),
-        "occurred_on": receipt.get("date") or None,
+        "occurred_on": _reasonable_receipt_date(receipt, today=current_date),
         "category": categories,
         "subcategory": subcategories,
         "payment_method": "Credit",
@@ -107,10 +119,98 @@ def _receipt_prompt(category_options: tuple[str, ...]) -> str:
     options = ", ".join((*category_options, "Unrecognized"))
     return (
         "Extract this Hebrew or English receipt. Return strict JSON only with keys: "
-        "vendor, total_amount, currency, category, language, confidence, reasoning, date. "
-        "date must be ISO 8601 or null. total_amount must be the amount after tax. "
+        "vendor, total_amount, currency, category, language, country, date_text, "
+        "confidence, reasoning, date. Identify the receipt's country from its language, "
+        "currency, tax identifiers, and merchant details. Copy the printed transaction date "
+        "exactly into date_text before interpreting it. Israeli numeric receipt dates use "
+        "DD/MM/YY or DD/MM/YYYY, never YY/MM/DD. date must be ISO 8601 or null. "
+        "total_amount must be the amount after tax. "
         f"category must be one of: {options}."
     )
+
+
+def _reasonable_receipt_date(receipt: dict[str, Any], *, today: date) -> str | None:
+    """Prefer a locale-aware printed date and reject implausible receipt dates."""
+
+    printed = _parse_printed_date(
+        receipt.get("date_text"),
+        day_first=_is_israeli_receipt(receipt),
+        today=today,
+    )
+    if printed is not None and _is_reasonable_receipt_date(printed, today=today):
+        return printed.isoformat()
+
+    extracted = _parse_iso_date(receipt.get("date"))
+    if extracted is not None and _is_reasonable_receipt_date(extracted, today=today):
+        return extracted.isoformat()
+
+    if extracted is not None and _is_israeli_receipt(receipt):
+        corrected = _correct_reversed_israeli_short_date(extracted, today=today)
+        if corrected is not None and _is_reasonable_receipt_date(corrected, today=today):
+            return corrected.isoformat()
+    return None
+
+
+def _parse_printed_date(value: Any, *, day_first: bool, today: date) -> date | None:
+    if not isinstance(value, str):
+        return None
+    match = _PRINTED_DATE_RE.search(value)
+    if match is None:
+        return None
+    first, second, year_text = (int(part) for part in match.groups())
+    if day_first or first > 12:
+        day, month = first, second
+    else:
+        month, day = first, second
+    year = _expand_short_year(year_text, today=today)
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
+def _parse_iso_date(value: Any) -> date | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError:
+        return None
+
+
+def _expand_short_year(value: str | int, *, today: date) -> int:
+    parsed = int(value)
+    if parsed >= 100:
+        return parsed
+    century = today.year - (today.year % 100)
+    candidates = (century - 100 + parsed, century + parsed, century + 100 + parsed)
+    return min(candidates, key=lambda year: abs(year - today.year))
+
+
+def _is_israeli_receipt(receipt: dict[str, Any]) -> bool:
+    country = str(receipt.get("country") or "").strip().casefold()
+    language = str(receipt.get("language") or "").strip().casefold()
+    currency = str(receipt.get("currency") or "").strip().upper()
+    return (
+        country in {"israel", "il", "isr", "ישראל"}
+        or language in {"he", "heb", "hebrew", "עברית"}
+        or currency in {"ILS", "NIS", "₪"}
+    )
+
+
+def _correct_reversed_israeli_short_date(value: date, *, today: date) -> date | None:
+    """Correct an observed DD/MM/YY -> YY-MM-DD model transposition."""
+
+    intended_day = value.year % 100
+    intended_year = _expand_short_year(value.day, today=today)
+    try:
+        return date(intended_year, value.month, intended_day)
+    except ValueError:
+        return None
+
+
+def _is_reasonable_receipt_date(value: date, *, today: date) -> bool:
+    return today - _MAX_RECEIPT_AGE <= value <= today
 
 
 def _pdf_text_probe(pdf_bytes: bytes) -> tuple[bool, str]:

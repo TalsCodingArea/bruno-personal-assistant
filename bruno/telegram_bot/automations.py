@@ -124,6 +124,28 @@ async def process_created_expense(
 
     destination = settings.channels.personal_assistant or fallback_chat
     try:
+        classification = await runtime.classify_created_expense(page_id)
+        if classification.get("would_apply") is True and not classification.get(
+            "applied"
+        ):
+            await safe_log(
+                context,
+                settings,
+                (
+                    "[expense-classifier:shadow] "
+                    f"{page_id}: {classification.get('category')} / "
+                    f"{classification.get('subcategory')} "
+                    f"({classification.get('confidence')})"
+                ),
+            )
+        elif classification.get("stage") == "unresolved":
+            await runtime.assistant_store.defer_notice(
+                str(destination),
+                "I could not confidently categorize a recent expense; it remains Uncategorized.",
+            )
+    except Exception as exc:
+        await safe_log(context, settings, f"[expense-classifier:error] {exc}")
+    try:
         result = await runtime.analyze_created_expense(page_id)
         severity = result["severity"]
         message = f"📊 Expense analysis ({severity})\n{result['summary']}"
@@ -167,7 +189,11 @@ def normalize_automation_arguments(
 
     if tool_name == "log_expense":
         return normalize_expense_arguments(arguments)
-    if tool_name not in {"auto_expense_tool", "log_txt_expense"}:
+    if tool_name not in {
+        "auto_expense_tool",
+        "log_txt_expense",
+        "handle_cal_notification",
+    }:
         return dict(arguments)
     aliases = {
         "Description": "description",

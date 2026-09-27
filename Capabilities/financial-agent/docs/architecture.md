@@ -48,6 +48,9 @@ There are two deliberately different kinds of service code.
   the same versioned profile service.
 - `budget_planning.py` loads grounded planning evidence and validates an agent-designed plan;
   it does not choose categories or allocations for the model.
+- `expense_classification.py` owns the single classification ladder for newly-created expenses.
+  It normalizes merchant names, scores exact/fuzzy history, bounds the allowed historical category
+  pairs, and decides whether the result may be persisted. Jev and Tavily remain replaceable ports.
 
 Example request path:
 
@@ -107,6 +110,21 @@ expense event → page snapshot diff → monthly inputs → deterministic impact
 
 The conversation graph accesses a monitoring decision only when needed through the read-only
 `get_expense_monitoring_decisions` tool. Monitor state is never copied into the normal prompt.
+
+New-expense automation has a separate, failure-isolated pre-monitor step:
+
+```text
+created expense
+  → categorized already? stop
+  → exact/fuzzy historical merchant evidence
+  → Jev over existing category pairs when confidence < threshold
+  → bounded Tavily merchant snippets + Jev when still below threshold
+  → shadow observation or Category/Sub Category update
+  → deterministic expense monitor (always runs)
+```
+
+Only merchant text is sent to Tavily. Web snippets are treated as untrusted input, and model
+outputs are rejected unless they exactly match a category/subcategory pair observed in history.
 
 ## `bootstrap.py`
 
