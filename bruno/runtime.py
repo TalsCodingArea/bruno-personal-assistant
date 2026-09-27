@@ -103,7 +103,12 @@ class BrunoRuntime:
                 )
                 graph = build_conversation_graph(
                     model,
-                    finance.tools.approval_conversation,
+                    (
+                        *finance.tools.approval_conversation,
+                        *build_expense_checkup_tools(
+                            cast(DailyBudgetGraphRunner, finance.daily_budget_graph)
+                        ),
+                    ),
                     saver,
                     currency=self.finance_settings.currency,
                     profile_service=finance.profile,

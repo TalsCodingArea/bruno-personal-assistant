@@ -80,6 +80,27 @@ class PromptChatModel(CountingChatModel):
         )
 
 
+class StructuredSummaryChatModel(CountingChatModel):
+    """Return Responses-API-style content blocks only for compaction calls."""
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        if messages and isinstance(messages[0], SystemMessage) and (
+            "Compact the older part" in str(messages[0].content)
+        ):
+            message = AIMessage(
+                content=[{"type": "text", "text": "Older objective retained."}]
+            )
+        else:
+            message = AIMessage(content="Current answer")
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+
 def test_same_thread_retains_messages_and_different_thread_is_isolated() -> None:
     graph = build_read_only_conversation_graph(
         CountingChatModel(),
@@ -117,6 +138,9 @@ def test_assistant_receives_strict_ils_currency_policy() -> None:
     assert "review recent actual spending" in str(response.content)
     assert "get_monthly_summary" in str(response.content)
     assert "get_budget_status" in str(response.content)
+    assert "does not need pre-approval" in str(response.content)
+    assert "Use check_expenses" in str(response.content)
+    assert "Be blunt and decisive" in str(response.content)
 
 
 def test_context_separates_interaction_settings_from_financial_rules() -> None:
@@ -208,6 +232,29 @@ def test_context_node_summarizes_old_turns_and_removes_their_messages() -> None:
     assert len(messages) == 2
     assert isinstance(messages[0], HumanMessage)
     assert messages[0].content == "Second topic"
+
+
+def test_context_node_accepts_structured_text_from_responses_api() -> None:
+    graph = build_read_only_conversation_graph(
+        StructuredSummaryChatModel(),
+        [],
+        InMemorySaver(),
+        today=date(2026, 8, 21),
+        context_policy=ContextPolicy(
+            compact_after_tokens=1,
+            keep_recent_user_turns=1,
+        ),
+    )
+
+    async def run() -> str:
+        await send_message(graph, thread_id="structured-summary", message="First topic")
+        await send_message(graph, thread_id="structured-summary", message="Second topic")
+        snapshot = await graph.aget_state(
+            {"configurable": {"thread_id": "structured-summary"}}
+        )
+        return snapshot.values["conversation_summary"]
+
+    assert asyncio.run(run()) == "Older objective retained."
 
 
 class ApprovalChatModel(CountingChatModel):
@@ -378,7 +425,7 @@ def test_interaction_write_uses_the_same_mandatory_approval_boundary() -> None:
     )
 
 
-def test_budget_page_creation_uses_the_same_mandatory_approval_boundary() -> None:
+def test_budget_page_creation_runs_autonomously_and_returns_confirmation() -> None:
     finance = FakeFinanceReader()
     repository = CreationRepository()
     service = BudgetPlanningService(finance, Rules(), repository)
@@ -393,18 +440,14 @@ def test_budget_page_creation_uses_the_same_mandatory_approval_boundary() -> Non
     )
 
     async def run() -> tuple[bool, str]:
-        pending = await start_conversation_turn(
+        completed = await start_conversation_turn(
             graph, thread_id="budget-approval", message="Create September's budget"
         )
-        assert repository.calls == []
-        completed = await resume_profile_write(
-            graph, thread_id="budget-approval", approved=True
-        )
         assert completed.response is not None
-        return pending.requires_approval, str(completed.response.content)
+        return completed.requires_approval, str(completed.response.content)
 
     requires_approval, response = asyncio.run(run())
 
-    assert requires_approval is True
+    assert requires_approval is False
     assert response == "Budget pages created"
     assert len(repository.calls) == 1

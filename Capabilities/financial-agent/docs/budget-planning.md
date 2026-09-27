@@ -10,11 +10,10 @@ that proposal and guard persistence.
 ```text
 get_budget_planning_context
   → draft_monthly_budget_plan
-  → explain plan, stability changes, variable reserve, and warnings
-  → apply_monthly_budget_plan only when Tal requests creation
-  → LangGraph approval interrupt
+  → apply_monthly_budget_plan when the grounded plan warrants creation
   → fresh evidence and target-page verification
   → idempotent Notion Budget page creation
+  → report confirmed pages and amounts to Tal
 ```
 
 `get_budget_planning_context` returns:
@@ -82,20 +81,23 @@ When Future Expenses still lacks its Notion property mapping, the context report
 `schema_not_configured` and the draft warns that future needs depend on user-provided context.
 It does not fabricate an empty future-expense obligation.
 
-## Approval and Notion creation
+## Autonomous guarded Notion creation
 
-`apply_monthly_budget_plan` rebuilds the same draft, then interrupts before any write. Rejection
-creates nothing. Approval triggers another full context read and verifies:
+`apply_monthly_budget_plan` rebuilds the same draft and then performs another full context read.
+It does not pause for pre-approval; Tal has authorized autonomous Budget-page management. It
+still verifies:
 
 - planning sources still match the fingerprint;
 - every target-month page that existed during drafting is unchanged;
 - no conflicting page appeared for a requested subcategory;
-- pages already carrying this plan's operation ID exactly match the approved plan.
+- pages already carrying this plan's operation ID exactly match the validated plan.
 
 New pages contain Name, Date, Budget, Progressive, Volatility, Baseline Budget, creation
 operation ID/reason/time, using the existing Budget schema. The operation ID makes retries
 idempotent. If Notion creates some pages before a later request fails, the error names confirmed
-pages; retrying the same approved plan recognizes them and creates only the missing pages.
+pages; retrying the same validated plan recognizes them and creates only the missing pages.
+After a successful call the assistant must report the confirmed pages and amounts; it may not
+claim creation from the draft alone.
 
 Notion has no multi-page transaction or conditional create. Concurrent external creation of
 the same subcategory between final verification and the API call remains an integration-level

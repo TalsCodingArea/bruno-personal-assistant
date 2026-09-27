@@ -1,8 +1,10 @@
 # Guarded budget mutation boundary
 
 Automatic budget mutation is internal infrastructure. It is not an agent tool and cannot be
-called by ordinary conversation. The daily budget graph is its only unattended caller.
-User-requested conversational changes will remain a separate draft-and-approval path.
+called directly by ordinary conversation. The conversation can invoke the daily budget graph
+through `check_expenses`; the same deterministic authorization, freshness checks, preference
+review, postflight verification, and rollback path still owns every update. Validated creation
+of missing monthly Budget pages is a separate autonomous tool path.
 
 ## Required Notion setup
 

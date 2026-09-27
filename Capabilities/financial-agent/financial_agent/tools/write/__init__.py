@@ -1,4 +1,4 @@
-"""Approval-gated mutation tools."""
+"""Mutation tools with operation-specific approval and autonomy policies."""
 from financial_agent.tools.write.budget import build_budget_write_tools
 from financial_agent.tools.write.interaction import build_interaction_write_tools
 from financial_agent.tools.write.profile import build_profile_write_tools

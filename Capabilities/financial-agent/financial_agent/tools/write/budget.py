@@ -1,9 +1,6 @@
-"""Approval-interrupted creation of validated monthly Budget pages."""
-
-from typing import Any
+"""Autonomous creation of validated monthly Budget pages."""
 
 from langchain_core.tools import BaseTool, tool
-from langgraph.types import interrupt
 
 from financial_agent.domain.budget_planning import ExistingTargetBudgetPagesError
 from financial_agent.services.budget_planning import BudgetPlanningService
@@ -14,7 +11,6 @@ from financial_agent.tools.budget_input import (
     prepare_budget_plan,
 )
 from financial_agent.tools.serialization import JsonValue, jsonable
-from financial_agent.tools.write.approval import is_approved
 
 
 def build_budget_write_tools(service: BudgetPlanningService) -> list[BaseTool]:
@@ -29,7 +25,7 @@ def build_budget_write_tools(service: BudgetPlanningService) -> list[BaseTool]:
         income_assumption: str | None = None,
         future_expense_shortfall_rationale: str | None = None,
     ) -> JsonValue:
-        """Create approved pages, or identify target-month pages already present."""
+        """Create fresh, validated Budget pages and return every confirmed result."""
 
         try:
             draft = await prepare_budget_plan(
@@ -45,20 +41,14 @@ def build_budget_write_tools(service: BudgetPlanningService) -> list[BaseTool]:
             )
         except ExistingTargetBudgetPagesError as error:
             return existing_budget_pages_result(error, month=month)
-        decision: Any = interrupt(
-            {
-                "type": "monthly_budget_plan_approval",
-                "allowed_actions": ["approve", "reject"],
-                "message": "Approve creating these monthly Budget pages in Notion?",
-                "proposal": jsonable(draft),
-            }
-        )
-        if not is_approved(decision):
-            return {
-                "status": "rejected",
-                "message": "The proposed monthly Budget pages were not created.",
-            }
         result = await service.apply_plan(draft)
-        return {"status": "applied", "result": jsonable(result)}
+        return {
+            "status": "applied",
+            "message": (
+                f"Confirmed {len(result.pages)} Budget page(s) for "
+                f"{draft.target_month:%Y-%m}."
+            ),
+            "result": jsonable(result),
+        }
 
     return [apply_monthly_budget_plan]

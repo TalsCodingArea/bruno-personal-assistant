@@ -46,7 +46,8 @@ class ExpenseAutomationService:
     """Validate and create expenses without a conversational approval interrupt.
 
     This service is intentionally reachable only from trusted automation transports.
-    Conversational writes continue to use the graph's approval-gated tool catalog.
+    Conversation expense writes remain unavailable; autonomous Budget management uses its own
+    freshness-checked, post-verified paths.
     """
 
     def __init__(

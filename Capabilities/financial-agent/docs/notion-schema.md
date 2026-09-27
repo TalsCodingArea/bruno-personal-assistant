@@ -61,9 +61,9 @@ count the full transaction against multiple budgets.
 - Missing `Progressive` is conservatively forecast as discrete and surfaced as an assumption
 - The guarded mutation adapter validates all four adjustment properties and the original five
   budget properties before writing; see `docs/budget-mutation.md`
-- Approved monthly creation plans also use the four adjustment/audit properties. Their
+- Validated monthly creation plans also use the four adjustment/audit properties. Their
   deterministic operation ID begins with `BCRT-`, Baseline Budget equals the initial Budget,
-  and the reason identifies the cap basis and approved plan.
+  and the reason identifies the cap basis and validated plan.
 
 ## Future Expenses
 

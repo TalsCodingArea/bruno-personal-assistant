@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import date
+from typing import cast
 
 from langchain_core.language_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -37,6 +38,10 @@ from financial_agent.services.monitoring_inputs import DailyMonitoringInputServi
 from financial_agent.services.operational_context import OperationalContextService
 from financial_agent.services.ports import RecurringTaskManager
 from financial_agent.services.profile import FinancialProfileService
+from financial_agent.tools.automation.monitoring import (
+    DailyBudgetGraphRunner,
+    build_expense_checkup_tools,
+)
 from financial_agent.tools.registry import ToolCatalog, build_tool_catalog
 
 
@@ -201,7 +206,12 @@ def build_conversation_application(
     )
     graph = build_conversation_graph(
         model,
-        dependencies.tools.approval_conversation,
+        (
+            *dependencies.tools.approval_conversation,
+            *build_expense_checkup_tools(
+                cast(DailyBudgetGraphRunner, dependencies.daily_budget_graph)
+            ),
+        ),
         checkpointer,
         today=today,
         currency=resolved_settings.currency,

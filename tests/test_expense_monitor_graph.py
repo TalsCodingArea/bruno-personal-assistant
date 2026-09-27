@@ -95,6 +95,9 @@ def test_shadow_graph_commits_grounded_decision_without_delivery_or_budget_write
     assert state["duplicate_event"] is False
     assert state["decision"].highest_severity is ExpenseSeverity.CRITICAL
     assert state["decision"].decision == "alert"
+    assert "Groceries is at ₪130.00" in state["decision"].summary
+    assert "against a ₪100.00 budget" in state["decision"].summary
+    assert "1 alert(s)" not in state["decision"].summary
     assert state["commit"].created is True
     assert state["alert_evaluations"][0].alert is not None
     assert state["delivery_receipts"] == ()

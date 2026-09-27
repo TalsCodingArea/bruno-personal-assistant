@@ -1,4 +1,4 @@
-"""Notion writer for approved, idempotent monthly Budget page creation."""
+"""Notion writer for validated, idempotent monthly Budget page creation."""
 
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
@@ -225,6 +225,6 @@ def _api_ratio(percent: Decimal) -> int | float:
 
 def _creation_reason(draft: MonthlyBudgetPlanDraft, subcategory: str) -> str:
     return (
-        f"Approved {draft.target_month:%Y-%m} budget creation for {subcategory}; "
+        f"Validated {draft.target_month:%Y-%m} budget creation for {subcategory}; "
         f"cap basis={draft.cap_basis.value}; {draft.cap_rationale}"
     )[:1800]

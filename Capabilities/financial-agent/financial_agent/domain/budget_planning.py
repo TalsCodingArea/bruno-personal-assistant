@@ -187,7 +187,7 @@ class BudgetStabilityComparison:
 
 @dataclass(frozen=True, slots=True)
 class MonthlyBudgetPlanDraft:
-    """Validated non-persisting plan that may later cross an approval interrupt."""
+    """Validated non-persisting plan that may later cross the guarded writer."""
 
     operation_id: str
     target_month: date
@@ -240,7 +240,7 @@ class CreatedBudgetPage:
 
 @dataclass(frozen=True, slots=True)
 class BudgetPlanCreationResult:
-    """Confirmed result of applying an approved budget plan."""
+    """Confirmed result of applying a validated budget plan."""
 
     operation_id: str
     pages: tuple[CreatedBudgetPage, ...]

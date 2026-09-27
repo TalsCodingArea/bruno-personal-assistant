@@ -55,7 +55,7 @@ class ToolCatalog:
 
     @property
     def approval_conversation(self) -> tuple[BaseTool, ...]:
-        """All tools; every member of write interrupts before its side effect."""
+        """All tools; each mutation enforces its own approval or autonomy policy."""
 
         return self.conversation + self.write
 

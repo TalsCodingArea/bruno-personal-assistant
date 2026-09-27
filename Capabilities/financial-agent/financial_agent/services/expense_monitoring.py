@@ -681,12 +681,17 @@ def _decision_summary(
     alerts: Sequence[ExpenseAlertDraft],
     reallocations: Sequence[BudgetReallocationDraft],
 ) -> str:
-    highest = max(
-        (assessment.severity for assessment in assessments),
-        key=_severity_rank,
-        default=ExpenseSeverity.NONE,
-    )
-    return (
-        f"{diff.reason} Highest severity: {highest.value}; "
-        f"{len(alerts)} alert(s), {len(reallocations)} reallocation draft(s)."
-    )
+    material = [
+        _alert_message(assessment)
+        for assessment in assessments
+        if assessment.severity is not ExpenseSeverity.NONE
+    ]
+    if not material:
+        material.append(f"{diff.reason} No material budget impact.")
+    for draft in reallocations:
+        changes = "; ".join(
+            f"{change.subcategory} ₪{change.current} → ₪{change.proposed}"
+            for change in draft.changes
+        )
+        material.append(f"Safe reallocation available: {changes}.")
+    return " ".join(material)
