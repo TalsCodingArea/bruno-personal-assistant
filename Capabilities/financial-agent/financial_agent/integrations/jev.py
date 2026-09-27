@@ -1,5 +1,7 @@
 """Jev-backed decisions for trusted notification automations."""
 
+# ruff: noqa: RUF001 -- Hebrew Cal examples intentionally contain these characters.
+
 from dataclasses import dataclass
 
 from langchain_typesafe import Noul, NoulCriteria, TypeSafeClassifier
@@ -46,19 +48,31 @@ class JevTransactionClassifier:
                 "questions": {
                     "is_expense_transaction": Noul(
                         instructions=(
-                            "Does this notification report an actual card expense that should "
-                            "be logged? An actual transaction must identify both a numeric "
-                            "amount and a merchant or payee name."
+                            "Decide whether this Cal credit-card notification reports a final "
+                            "expense that should be forwarded for logging. Return the probability "
+                            "of true as a Noul. Cal commonly writes a purchase in Hebrew as "
+                            "'ב-<merchant> בסך<amount> בכרטיס ...': the merchant follows 'ב-' and "
+                            "the numeric amount follows 'בסך', sometimes without a space and with "
+                            "the currency before or after the number. This is a transaction even "
+                            "when the message does not contain the words 'עסקה' or 'רכישה'. For "
+                            "example, 'ב-TYPESAFE AI, INC. בסך10$ בכרטיס מסטרקארד 0273' is a "
+                            "transaction. However, the phrase 'לא סופי' means the amount is a "
+                            "temporary authorization/deposit and is not yet a transaction to log."
                         ),
                         criteria=NoulCriteria(
                             true=(
-                                "A completed or pending purchase/charge with an explicit "
-                                "numeric amount and an identifiable merchant or payee."
+                                "The notification identifies both a merchant/payee and an explicit "
+                                "numeric amount for a final card charge. Strong positive evidence "
+                                "includes the Cal form 'ב-<merchant>' followed later by "
+                                "'בסך<amount>', including compact forms such as 'בסך10$'."
                             ),
                             false=(
-                                "Missing either amount or merchant/payee, or it is an OTP, "
-                                "promotion, general account/security notice, declined charge, "
-                                "refund, cancellation, or another non-expense event."
+                                "The text contains 'לא סופי'; lacks either a merchant/payee or a "
+                                "numeric amount; or reports an OTP, promotion, general account or "
+                                "security notice, declined charge, refund, cancellation, or "
+                                "another "
+                                "non-expense event. 'לא סופי' is decisive negative evidence even "
+                                "when both merchant and amount are present."
                             ),
                         ),
                     )
