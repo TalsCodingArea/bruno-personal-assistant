@@ -125,6 +125,7 @@ def _receipt_prompt(category_options: tuple[str, ...]) -> str:
         "exactly into date_text before interpreting it. Israeli numeric receipt dates use "
         "DD/MM/YY or DD/MM/YYYY, never YY/MM/DD. date must be ISO 8601 or null. "
         "total_amount must be the amount after tax. "
+        "confidence must be a JSON number between 0 and 1, never a label. "
         f"category must be one of: {options}."
     )
 
@@ -265,7 +266,17 @@ def _parse_json(raw: str) -> dict[str, Any]:
 def _usable(value: dict[str, Any] | None) -> bool:
     if value is None or value.get("vendor") is None:
         return False
-    return float(value.get("confidence") or 0) >= 0.5
+    confidence = value.get("confidence")
+    if isinstance(confidence, str):
+        confidence = {"high": 0.9, "medium": 0.5, "low": 0.1}.get(
+            confidence.strip().casefold(), confidence
+        )
+    if isinstance(confidence, bool) or not isinstance(confidence, (str, int, float)):
+        return False
+    try:
+        return 0.5 <= float(confidence) <= 1
+    except (ValueError, OverflowError):
+        return False
 
 
 def _normalize_category(value: Any, options: tuple[str, ...]) -> str:
