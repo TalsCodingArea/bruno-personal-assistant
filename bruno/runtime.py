@@ -20,6 +20,7 @@ from financial_agent.integrations.jev import JevTransactionClassifier
 from financial_agent.integrations.jev_category_decider import JevCategoryDecider
 from financial_agent.integrations.openai_model import build_openai_chat_model
 from financial_agent.integrations.tavily_search import TavilyMerchantSearch
+from financial_agent.services.category_memory import CategoryMemory
 from financial_agent.services.expense_automation import ExpenseAutomationService
 from financial_agent.services.expense_classification import (
     ExpenseClassificationPolicy,
@@ -157,6 +158,7 @@ class BrunoRuntime:
                     cast(ExpenseClassificationReader, finance.finance.reader),
                     expenses,
                     decider=category_decider,
+                    memory=CategoryMemory(finance.profile),
                     search=merchant_search,
                     policy=ExpenseClassificationPolicy(
                         mode=self.settings.expense_classifier_mode,

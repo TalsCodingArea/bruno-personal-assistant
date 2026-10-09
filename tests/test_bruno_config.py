@@ -52,3 +52,9 @@ def test_invalid_expense_classifier_configuration_is_rejected(
 
     with pytest.raises(ValueError, match=message):
         load_bruno_settings()
+
+
+def test_expense_classifier_applies_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "token")
+    monkeypatch.delenv("BRUNO_EXPENSE_CLASSIFIER_MODE", raising=False)
+    assert load_bruno_settings().expense_classifier_mode is ClassificationMode.APPLY

@@ -13,6 +13,7 @@ from typing import Protocol
 from rapidfuzz import fuzz, process
 
 from financial_agent.domain.models import Transaction
+from financial_agent.services.category_memory import CategoryMemory
 
 _EMPTY_LABELS = {"", "uncategorized", "unassigned", "unknown"}
 _NOISE_TOKENS = {
@@ -37,6 +38,7 @@ class ClassificationMode(StrEnum):
 class ClassificationStage(StrEnum):
     """The evidence stage that produced the final outcome."""
 
+    CORRECTION = "correction"
     HISTORY = "history"
     MERCHANT = "merchant"
     WEB = "web"
@@ -171,12 +173,14 @@ class ExpenseClassificationService:
         decider: CategoryDecider | None,
         search: MerchantSearch | None,
         policy: ExpenseClassificationPolicy | None = None,
+        memory: CategoryMemory | None = None,
     ) -> None:
         self.reader = reader
         self.writer = writer
         self.decider = decider
         self.search = search
         self.policy = policy or ExpenseClassificationPolicy()
+        self.memory = memory
 
     async def classify_created_expense(
         self,
@@ -196,6 +200,21 @@ class ExpenseClassificationService:
                 page_id,
                 "Existing multiple category values require manual review.",
             )
+        if self.memory is not None:
+            try:
+                pair = await self.memory.lookup(current.description)
+            except Exception:
+                return _unresolved(page_id, "Merchant correction memory is unavailable or invalid.")
+            if pair is not None:
+                category, subcategory = pair
+                return await self._finalize(
+                    page_id,
+                    ClassificationStage.CORRECTION,
+                    CategoryDecision(
+                        category, subcategory, Decimal("1"), "Explicit user merchant correction."
+                    ),
+                )
+
         if not _needs_classification(current):
             return _empty_outcome(page_id, "Expense is already categorized.")
 

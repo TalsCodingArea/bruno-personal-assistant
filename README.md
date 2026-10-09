@@ -173,12 +173,13 @@ and can be tuned with `BRUNO_JEV_TRANSACTION_THRESHOLD` after evaluating real Ca
 
 ## Automatic expense classification
 
-Every newly created uncategorized expense goes through one bounded classification ladder before
-its financial-impact analysis:
+Every newly created expense checks learned merchant rules. Uncategorized expenses then continue
+through the remaining classification stages before financial-impact analysis:
 
-1. exact and fuzzy merchant matching against the prior 730 days of categorized expenses;
-2. Jev selecting from category/subcategory pairs that already exist in that history;
-3. if the result is still below the confidence threshold, a minimal Tavily merchant search and
+1. explicit merchant rules learned from your category corrections;
+2. exact and fuzzy merchant matching against the prior 730 days of categorized expenses;
+3. Jev selecting from category/subcategory pairs that already exist in that history;
+4. if the result is still below the confidence threshold, a minimal Tavily merchant search and
    one final Jev selection using the returned snippets.
 
 The classifier never invents a category pair, sends transaction amounts or other financial data
@@ -188,8 +189,19 @@ normal expense history makes that decision available to future classifications.
 
 Set `TYPESAFE_API_KEY` for the Jev stages and `TAVILY_API_KEY` for the low-confidence web fallback.
 `BRUNO_EXPENSE_CLASSIFICATION_THRESHOLD` defaults to `0.8`. Rollout defaults to
-`BRUNO_EXPENSE_CLASSIFIER_MODE=shadow`, which records what would be applied without changing
-Notion. Change the mode to `apply` after reviewing shadow results, or `off` to disable the flow.
+`BRUNO_EXPENSE_CLASSIFIER_MODE=apply`, which saves accepted classifications to Notion.
+Use `shadow` to preview decisions without writing, or `off` to disable the flow. Existing
+deployments with an explicit `shadow` value in their local `.env` must change it to `apply`
+and restart Bruno.
+
+Tell Bruno which expense has the wrong category and the intended classification. It looks up
+the expense and existing category pairs, then updates both Category and Sub Category through
+`correct_expense_category` without an extra approval. Ambiguous matches require clarification.
+Reusable merchant corrections are versioned in Notion Financial Rules and override historical
+majorities and receipt category guesses on future new expenses. Matching ignores case and
+spacing but preserves merchant/branch details. One-time exceptions do not create a standing
+rule. Bruno reports the expense update and memory save separately; failed memory saves can
+be retried. Historical rows are not bulk-reclassified.
 
 To calibrate the history-stage threshold without API calls, export labeled expenses to a JSON
 list with `id`, `description`, `occurred_on`, `category`, and `subcategory`, then run:

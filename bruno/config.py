@@ -31,7 +31,7 @@ class BrunoSettings:
     tavily_api_key: SecretStr | None = None
     jev_model: str = "jev-latest"
     jev_transaction_threshold: float = 0.8
-    expense_classifier_mode: ClassificationMode = ClassificationMode.SHADOW
+    expense_classifier_mode: ClassificationMode = ClassificationMode.APPLY
     expense_classification_threshold: float = 0.8
 
 
@@ -59,7 +59,7 @@ def load_bruno_settings() -> BrunoSettings:
     typesafe_api_key = os.getenv("TYPESAFE_API_KEY", "").strip()
     tavily_api_key = os.getenv("TAVILY_API_KEY", "").strip()
     classifier_mode_value = os.getenv(
-        "BRUNO_EXPENSE_CLASSIFIER_MODE", "shadow"
+        "BRUNO_EXPENSE_CLASSIFIER_MODE", "apply"
     ).strip().casefold()
     try:
         classifier_mode = ClassificationMode(classifier_mode_value)

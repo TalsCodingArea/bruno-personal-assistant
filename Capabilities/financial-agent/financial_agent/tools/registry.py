@@ -6,10 +6,12 @@ from langchain_core.tools import BaseTool
 
 from financial_agent.services.budget_planning import BudgetPlanningService
 from financial_agent.services.cashflow import CashflowService
+from financial_agent.services.category_correction import CategoryCorrectionService
 from financial_agent.services.finance_queries import FinanceQueryService
 from financial_agent.services.interaction import InteractionProfileService
 from financial_agent.services.ports import ExpenseMonitorLedger, RecurringTaskManager
 from financial_agent.services.profile import FinancialProfileService
+from financial_agent.tools.category_correction import build_category_correction_tools
 from financial_agent.tools.draft import (
     build_budget_draft_tools,
     build_draft_tools,
@@ -74,12 +76,19 @@ def build_tool_catalog(
     budget_planning: BudgetPlanningService | None = None,
     cashflow: CashflowService | None = None,
     recurring_tasks: RecurringTaskManager | None = None,
+    category_corrections: CategoryCorrectionService | None = None,
 ) -> ToolCatalog:
     """Construct all finance tools from one dependency-injected service."""
 
+    correction_tools = (
+        tuple(build_category_correction_tools(category_corrections))
+        if category_corrections is not None
+        else ()
+    )
     return ToolCatalog(
         financial_data=(
-            (
+            correction_tools[:1]
+            + (
                 tuple(build_monitoring_read_tools(monitoring_ledger))
                 if monitoring_ledger is not None
                 else ()
@@ -124,7 +133,8 @@ def build_tool_catalog(
             )
         ),
         write=(
-            (
+            correction_tools[1:]
+            + (
                 tuple(build_budget_write_tools(budget_planning))
                 if budget_planning is not None
                 else ()

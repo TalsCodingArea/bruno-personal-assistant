@@ -20,6 +20,7 @@ def test_bootstrap_connects_safe_tools_to_real_notion_sdk_without_requesting_dat
     application = build_finance_application(settings)
 
     assert {tool.name for tool in application.tools.conversation} == {
+        "get_expense_category_context",
         "get_current_reimbursement",
         "get_current_credit_debt",
         "get_monthly_summary",
@@ -39,6 +40,7 @@ def test_bootstrap_connects_safe_tools_to_real_notion_sdk_without_requesting_dat
             "draft_monthly_budget_plan",
     }
     assert {tool.name for tool in application.tools.write} == {
+        "correct_expense_category",
         "apply_financial_profile_update",
         "apply_interaction_preference_update",
         "apply_monthly_budget_plan",

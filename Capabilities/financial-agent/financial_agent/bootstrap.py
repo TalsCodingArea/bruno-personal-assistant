@@ -30,7 +30,10 @@ from financial_agent.integrations.openai_budget_review import (
 from financial_agent.services.budget_mutation import BudgetMutationService
 from financial_agent.services.budget_planning import BudgetPlanningService
 from financial_agent.services.cashflow import CashflowService
+from financial_agent.services.category_correction import CategoryCorrectionService
+from financial_agent.services.category_memory import CategoryMemory
 from financial_agent.services.daily_budget_monitoring import DailyBudgetMonitoringService
+from financial_agent.services.expense_automation import ExpenseAutomationService
 from financial_agent.services.expense_monitor_workflow import ExpenseMonitorWorkflowService
 from financial_agent.services.finance_queries import FinanceQueryService
 from financial_agent.services.interaction import InteractionProfileService
@@ -186,6 +189,11 @@ def build_finance_application(
             budget_planning,
             cashflow,
             recurring_tasks,
+            CategoryCorrectionService(
+                finance_reader,
+                ExpenseAutomationService(notion, sources.expenses, reader=finance_reader),
+                CategoryMemory(profile),
+            ),
         ),
     )
 
